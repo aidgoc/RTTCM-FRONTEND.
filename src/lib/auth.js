@@ -142,7 +142,7 @@ export function AuthProvider({ children }) {
   };
 
   const canCreateCranes = () => {
-    return hasRole('manager');
+    return hasAnyRole(['admin', 'manager']);
   };
 
   const canAssignCranes = () => {

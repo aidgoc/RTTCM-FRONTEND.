@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { 
   CheckCircleIcon, 
@@ -11,14 +12,94 @@ import {
   SignalSlashIcon,
   TicketIcon
 } from '@heroicons/react/24/outline';
+import { ticketsAPI } from '../lib/api';
+import { useQueryClient } from 'react-query';
+import toast from 'react-hot-toast';
 
 export default function CraneCard({ crane, userRole, onAssign }) {
+  const router = useRouter();
   const [isHovered, setIsHovered] = useState(false);
+  const [hasOpenTickets, setHasOpenTickets] = useState(false);
+  const queryClient = useQueryClient();
+
+  // Check for open tickets when crane data changes
+  useEffect(() => {
+    const checkOpenTickets = async () => {
+      try {
+        console.log(`🔍 Checking tickets for crane: ${crane.craneId}`);
+        const response = await ticketsAPI.getAll({ 
+          craneId: crane.craneId, 
+          status: 'all' 
+        });
+        console.log(`📦 Tickets API Response for ${crane.craneId}:`, response);
+        console.log(`📦 Response data:`, response?.data);
+        console.log(`📦 Response.data.data:`, response?.data?.data);
+        console.log(`📦 Response.data.data.tickets:`, response?.data?.data?.tickets);
+        // Axios wraps the response, so the actual data is in response.data.data.tickets
+        const tickets = response?.data?.data?.tickets || response?.data?.tickets || [];
+        console.log(`🎫 Parsed tickets for ${crane.craneId}:`, tickets.length, tickets);
+        const openTickets = tickets.filter(t => 
+          t.status === 'open' || t.status === 'in_progress'
+        );
+        console.log(`✅ Open tickets for ${crane.craneId}:`, openTickets.length, openTickets);
+        setHasOpenTickets(openTickets.length > 0);
+        // Also update lastStatusRaw if we have open tickets but lastStatusRaw doesn't show it
+        if (openTickets.length > 0 && !crane.lastStatusRaw?.isTicketOpen) {
+          // Update the crane's lastStatusRaw in the local state
+          crane.lastStatusRaw = crane.lastStatusRaw || {};
+          crane.lastStatusRaw.isTicketOpen = true;
+          crane.lastStatusRaw.ticketNumber = openTickets[0].ticketNumber || openTickets[0].ticketId;
+        }
+      } catch (error) {
+        console.error(`❌ Error checking open tickets for ${crane.craneId}:`, error);
+        console.error('Error details:', error.response?.data || error.message);
+      }
+    };
+
+    checkOpenTickets();
+    // Refresh every 10 seconds to check for new tickets
+    const interval = setInterval(checkOpenTickets, 10000);
+    return () => clearInterval(interval);
+  }, [crane.craneId]);
+
+  // Check for overload condition and show alert
+  useEffect(() => {
+    const isOverloaded = crane.lastStatusRaw?.overload === true || crane.lastStatusRaw?.overload === 1;
+    const overloadState = crane.lastStatusRaw?.overloadState;
+    
+    if (isOverloaded && overloadState === 'OVERLOAD') {
+      const overloadMinutes = crane.lastStatusRaw?.currentOverloadMinutes || 0;
+      const todayEvents = crane.lastStatusRaw?.todayOverloadEvents || 0;
+      const riskLevel = crane.lastStatusRaw?.riskLevel || 'LOW';
+      
+      // Show toast alert for overload
+      toast.error(
+        `⚠️ OVERLOAD ALERT: ${crane.name}\n` +
+        `Current overload: ${overloadMinutes.toFixed(1)} minutes\n` +
+        `Events today: ${todayEvents}\n` +
+        `Risk Level: ${riskLevel}`,
+        {
+          duration: 8000,
+          position: 'top-right',
+          style: {
+            background: '#991B1B',
+            color: '#FEE2E2',
+            fontWeight: 'bold',
+            border: '2px solid #DC2626'
+          }
+        }
+      );
+    }
+  }, [crane.lastStatusRaw?.overload, crane.lastStatusRaw?.overloadState, crane.name]);
   
-  const handleTicketClick = () => {
-    // Navigate to dedicated tickets page
-    window.location.href = `/crane-tickets?craneId=${crane.craneId}`;
+  const handleTicketClick = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Navigate to full page tickets view
+    router.push(`/cranes/${crane.craneId}/tickets`);
   };
+
   
   const getStatusColor = (status) => {
     switch (status) {
@@ -63,6 +144,24 @@ export default function CraneCard({ crane, userRole, onAssign }) {
     const diffDays = Math.floor(diffHours / 24);
     return `${diffDays}d ago`;
   };
+
+  // Debug logging for crane data
+  useEffect(() => {
+    console.log(`🔍 CraneCard Debug for ${crane.craneId}:`, {
+      testModeActivated: crane.lastStatusRaw?.testModeActivated,
+      testModeCompleted: crane.lastStatusRaw?.testModeCompleted,
+      testMode: crane.lastStatusRaw?.testMode,
+      utilState: crane.lastStatusRaw?.utilState,
+      util: crane.lastStatusRaw?.util,
+      overload: crane.lastStatusRaw?.overload,
+      overloadState: crane.lastStatusRaw?.overloadState,
+      ls1TestedToday: crane.lastStatusRaw?.ls1TestedToday,
+      ls2TestedToday: crane.lastStatusRaw?.ls2TestedToday,
+      ls3TestedToday: crane.lastStatusRaw?.ls3TestedToday,
+      ls4TestedToday: crane.lastStatusRaw?.ls4TestedToday,
+      testDoneAt: crane.lastStatusRaw?.testDoneAt
+    });
+  }, [crane.craneId, crane.lastStatusRaw]);
 
   const statusSummary = crane.statusSummary || {
     status: crane.online ? 'normal' : 'offline',
@@ -111,15 +210,47 @@ export default function CraneCard({ crane, userRole, onAssign }) {
                   alt="Load" 
                   className="h-4 w-4"
                 />
-            <span className="font-bold text-gray-800 dark:text-gray-200">
-              {((statusSummary.currentLoad || 0) / 1000).toFixed(1)}T - {(crane.swl / 1000).toFixed(1)}T
+            <span className={`font-bold ${
+              crane.lastStatusRaw?.overload === true || crane.lastStatusRaw?.overload === 1
+                ? 'text-red-600 dark:text-red-400 animate-pulse'
+                : 'text-gray-800 dark:text-gray-200'
+            }`}>
+              {crane.lastStatusRaw?.load !== undefined 
+                ? crane.lastStatusRaw.load.toFixed(1) 
+                : (statusSummary.currentLoad || 0).toFixed(1)}T
+              {(crane.lastStatusRaw?.overload === true || crane.lastStatusRaw?.overload === 1) && (
+                <span className="ml-1 text-xs">⚠️ OVERLOAD</span>
+              )}
             </span>
               </div>
               <div className="flex items-center space-x-2">
                 <ChartBarIcon className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                <span className="font-bold text-gray-800 dark:text-gray-200">
-                  {Math.floor((statusSummary.utilization || 0) / 60)}h {Math.floor((statusSummary.utilization || 0) % 60)}m
+                <span className={`font-bold ${
+                  crane.lastStatusRaw?.utilState === 'WORKING' 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : 'text-gray-800 dark:text-gray-200'
+                }`}>
+                  {crane.lastStatusRaw?.utilizationHours && crane.lastStatusRaw.utilizationHours > 0
+                    ? `${crane.lastStatusRaw.utilizationHours.toFixed(1)}h` 
+                    : (statusSummary.utilization > 0)
+                    ? `${Math.floor(statusSummary.utilization / 60)}h ${Math.floor(statusSummary.utilization % 60)}m`
+                    : 'UT'}
+                  {crane.lastStatusRaw?.utilizationPercentage !== undefined && crane.lastStatusRaw.utilizationPercentage > 0 && (
+                    <span className="text-xs ml-1">
+                      ({crane.lastStatusRaw.utilizationPercentage.toFixed(1)}%)
+                    </span>
+                  )}
                 </span>
+                {crane.lastStatusRaw?.utilState === 'WORKING' && (
+                  <span className="text-xs text-green-600 dark:text-green-400 font-semibold">
+                    🟢 WORKING
+                  </span>
+                )}
+                {crane.lastStatusRaw?.utilState === 'IDLE' && (
+                  <span className="text-xs text-gray-500 dark:text-gray-400 font-semibold">
+                    ⚫ IDLE
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -181,32 +312,8 @@ export default function CraneCard({ crane, userRole, onAssign }) {
           </div>
         )}
 
-        {/* DRM3300 Wind Data */}
-        {(crane.lastStatusRaw?.windSpeed || crane.lastStatusRaw?.windDirection) && (
-          <div className="mb-4">
-            <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2 group-hover:text-gray-800 dark:group-hover:text-gray-200 transition-colors duration-300">
-              Wind Conditions
-            </h4>
-            <div className="flex items-center space-x-4">
-              {crane.lastStatusRaw.windSpeed && (
-                <div className="flex items-center space-x-1">
-                  <span className="text-xs text-gray-500 dark:text-gray-400">Speed:</span>
-                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                    {crane.lastStatusRaw.windSpeed.toFixed(1)} km/h
-                  </span>
-                </div>
-              )}
-              {crane.lastStatusRaw.windDirection && (
-                <div className="flex items-center space-x-1">
-                  <span className="text-xs text-gray-500 dark:text-gray-400">Direction:</span>
-                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                    {crane.lastStatusRaw.windDirection}°
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        {/* Wind Data - Disabled until MQTT sends wind data */}
+        {/* Wind components removed - will be re-enabled when MQTT sensors provide wind data */}
 
 
         {/* Individual Limit Switch Cards */}
@@ -246,26 +353,35 @@ export default function CraneCard({ crane, userRole, onAssign }) {
                     <div className={`w-3 h-3 rounded-full transition-all duration-300 group-hover:scale-110 relative ${
                     crane.lastStatusRaw?.[ls] === 'OK' ? 'bg-transparent' :
                     crane.lastStatusRaw?.[ls] === 'FAIL' ? 'bg-transparent' :
+                    crane.lastStatusRaw?.[ls] === 'HIT' ? 'bg-transparent' :
                     'bg-transparent'
                   }`}>
                       {/* Enhanced glowing effect for OK status */}
                     {crane.lastStatusRaw?.[ls] === 'OK' && (
                       <>
                         <div className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-75"></div>
-                          <div className="absolute inset-0 rounded-full bg-green-400 shadow-lg shadow-green-400/50 animate-pulse"></div>
-                          <div className="absolute inset-1 rounded-full bg-green-500 animate-pulse"></div>
+                        <div className="absolute inset-0 rounded-full bg-green-400 shadow-lg shadow-green-400/50 animate-pulse"></div>
+                        <div className="absolute inset-1 rounded-full bg-green-500 animate-pulse"></div>
                       </>
                     )}
                       {/* Enhanced glowing effect for FAIL status */}
                     {crane.lastStatusRaw?.[ls] === 'FAIL' && (
                       <>
                         <div className="absolute inset-0 rounded-full bg-red-400 animate-ping opacity-75"></div>
-                          <div className="absolute inset-0 rounded-full bg-red-400 shadow-lg shadow-red-400/50 animate-pulse"></div>
-                          <div className="absolute inset-1 rounded-full bg-red-500 animate-pulse"></div>
+                        <div className="absolute inset-0 rounded-full bg-red-400 shadow-lg shadow-red-400/50 animate-pulse"></div>
+                        <div className="absolute inset-1 rounded-full bg-red-500 animate-pulse"></div>
+                      </>
+                    )}
+                      {/* Enhanced glowing effect for HIT status */}
+                    {crane.lastStatusRaw?.[ls] === 'HIT' && (
+                      <>
+                        <div className="absolute inset-0 rounded-full bg-yellow-400 animate-ping opacity-75"></div>
+                        <div className="absolute inset-0 rounded-full bg-yellow-400 shadow-lg shadow-yellow-400/50 animate-pulse"></div>
+                        <div className="absolute inset-1 rounded-full bg-yellow-500 animate-pulse"></div>
                       </>
                     )}
                       {/* Enhanced effect for unknown status */}
-                    {crane.lastStatusRaw?.[ls] !== 'OK' && crane.lastStatusRaw?.[ls] !== 'FAIL' && (
+                    {crane.lastStatusRaw?.[ls] !== 'OK' && crane.lastStatusRaw?.[ls] !== 'FAIL' && crane.lastStatusRaw?.[ls] !== 'HIT' && (
                         <>
                           <div className="absolute inset-1 rounded-full bg-gray-400 animate-pulse"></div>
                         </>
@@ -273,14 +389,18 @@ export default function CraneCard({ crane, userRole, onAssign }) {
                     </div>
                   </div>
                   
-                  {/* Bottom Section - Trigger Count */}
+                  {/* Bottom Section - Status Display */}
                   <div className="relative z-10 p-1 h-12 flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-700 group-hover:bg-gray-100 dark:group-hover:bg-gray-600 transition-colors duration-300">
-                    <div className={`text-lg font-bold transition-colors duration-300 ${
-                      triggerCount > 0 
-                        ? 'text-blue-600 dark:text-blue-400 group-hover:text-blue-700 dark:group-hover:text-blue-300' 
-                        : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-500 dark:group-hover:text-gray-400'
+                    <div className={`text-xs font-bold uppercase transition-colors duration-300 ${
+                      crane.lastStatusRaw?.[ls] === 'OK' 
+                        ? 'text-green-600 dark:text-green-400' 
+                        : crane.lastStatusRaw?.[ls] === 'FAIL'
+                        ? 'text-red-600 dark:text-red-400'
+                        : crane.lastStatusRaw?.[ls] === 'HIT'
+                        ? 'text-yellow-600 dark:text-yellow-400'
+                        : 'text-gray-400 dark:text-gray-500'
                     }`}>
-                      {triggerCount}
+                      {crane.lastStatusRaw?.[ls] || 'N/A'}
                     </div>
                   </div>
                 </div>
@@ -293,24 +413,26 @@ export default function CraneCard({ crane, userRole, onAssign }) {
         <div className="mb-4">
           <div 
             className={`flex items-center justify-center p-3 rounded-lg transition-all duration-300 border cursor-pointer group-hover:scale-105 ${
-              (crane.tickets?.total || 0) === 0 
-                ? 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900 dark:to-emerald-900 group-hover:from-green-100 group-hover:to-emerald-100 dark:group-hover:from-green-800 dark:group-hover:to-emerald-800 border-green-200 dark:border-green-600 group-hover:border-green-300 dark:group-hover:border-green-500'
-                : 'bg-gradient-to-r from-red-50 to-pink-50 dark:from-red-900 dark:to-pink-900 group-hover:from-red-100 group-hover:to-pink-100 dark:group-hover:from-red-800 dark:group-hover:to-pink-800 border-red-200 dark:border-red-600 group-hover:border-red-300 dark:group-hover:border-red-500'
+              hasOpenTickets || crane.lastStatusRaw?.isTicketOpen
+                ? 'bg-gradient-to-r from-red-50 to-pink-50 dark:from-red-900 dark:to-pink-900 group-hover:from-red-100 group-hover:to-pink-100 dark:group-hover:from-red-800 dark:group-hover:to-pink-800 border-red-200 dark:border-red-600 group-hover:border-red-300 dark:group-hover:border-red-500'
+                : 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900 dark:to-emerald-900 group-hover:from-green-100 group-hover:to-emerald-100 dark:group-hover:from-green-800 dark:group-hover:to-emerald-800 border-green-200 dark:border-green-600 group-hover:border-green-300 dark:group-hover:border-green-500'
             }`}
             onClick={handleTicketClick}
           >
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center justify-center space-x-2 w-full">
               <TicketIcon className={`h-4 w-4 transition-colors duration-300 ${
-                (crane.tickets?.total || 0) === 0 
-                  ? 'text-green-600 dark:text-green-400 group-hover:text-green-700 dark:group-hover:text-green-300'
-                  : 'text-red-600 dark:text-red-400 group-hover:text-red-700 dark:group-hover:text-red-300 animate-pulse'
+                hasOpenTickets || crane.lastStatusRaw?.isTicketOpen
+                  ? 'text-red-600 dark:text-red-400 group-hover:text-red-700 dark:group-hover:text-red-300 animate-pulse'
+                  : 'text-green-600 dark:text-green-400 group-hover:text-green-700 dark:group-hover:text-green-300'
               }`} />
               <span className={`text-sm font-semibold transition-colors duration-300 ${
-                (crane.tickets?.total || 0) === 0 
-                  ? 'text-green-700 dark:text-green-300 group-hover:text-green-800 dark:group-hover:text-green-200'
-                  : 'text-red-700 dark:text-red-300 group-hover:text-red-800 dark:group-hover:text-red-200 animate-pulse'
+                hasOpenTickets || crane.lastStatusRaw?.isTicketOpen
+                  ? 'text-red-700 dark:text-red-300 group-hover:text-red-800 dark:group-hover:text-red-200'
+                  : 'text-green-700 dark:text-green-300 group-hover:text-green-800 dark:group-hover:text-green-200'
               }`}>
-                Tickets Raised
+                {(hasOpenTickets || crane.lastStatusRaw?.isTicketOpen) 
+                  ? `Ticket${hasOpenTickets ? 's' : ''} #${crane.lastStatusRaw?.ticketNumber || '?'}`
+                  : 'No Tickets'}
               </span>
             </div>
           </div>
@@ -328,20 +450,21 @@ export default function CraneCard({ crane, userRole, onAssign }) {
             </Link>
             
             <div className="flex items-center space-x-2">
-              {/* Test Results button for managers/admins */}
+              {/* Daily Test Status Badge */}
               {(userRole === 'manager' || userRole === 'admin') && (
-                <button
-                  onClick={() => {
-                    // This would open the test results viewer
-                    // You'll need to pass a callback from parent component
-                    if (window.openTestResults) {
-                      window.openTestResults(crane.craneId);
-                    }
-                  }}
-                  className="px-3 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors duration-200 hover:scale-105"
-                >
-                  Test Results
-                </button>
+                <div className={`px-3 py-1 text-xs font-semibold rounded-md transition-all duration-200 ${
+                  crane.lastStatusRaw?.testModeCompleted 
+                    ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300 border border-green-300 dark:border-green-700' 
+                    : crane.lastStatusRaw?.testModeActivated
+                    ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300 border border-yellow-300 dark:border-yellow-700 animate-pulse'
+                    : 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300 border border-red-300 dark:border-red-700'
+                }`}>
+                  {crane.lastStatusRaw?.testModeCompleted 
+                    ? '✅ Test Done' 
+                    : crane.lastStatusRaw?.testModeActivated
+                    ? '🔧 Testing...'
+                    : '❌ Test Not Done'}
+                </div>
               )}
               
               {/* Assign to Operators button for supervisors */}
@@ -357,6 +480,7 @@ export default function CraneCard({ crane, userRole, onAssign }) {
           </div>
         </div>
       </div>
+
     </div>
   );
 }

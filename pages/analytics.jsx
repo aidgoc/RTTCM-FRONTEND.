@@ -687,40 +687,8 @@ export default function Analytics() {
                   </div>
                 </div>
 
-                {/* Wind Conditions */}
-                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-lg">
-                  <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">
-                    Wind Conditions Analysis
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">Current Wind Speed</span>
-                        <span className="font-medium text-gray-900 dark:text-white">12.5 km/h</span>
-                      </div>
-                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                        <div className="bg-yellow-500 h-2 rounded-full" style={{ width: '25%' }}></div>
-                      </div>
-                      <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        <span>0 km/h</span>
-                        <span>25 km/h</span>
-                        <span>50 km/h</span>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">Wind Direction</span>
-                        <span className="font-medium text-gray-900 dark:text-white">180° (S)</span>
-                      </div>
-                      <div className="w-16 h-16 mx-auto relative">
-                        <div className="w-full h-full border-2 border-gray-300 dark:border-gray-600 rounded-full flex items-center justify-center">
-                          <div className="w-1 h-8 bg-red-500 transform rotate-180 origin-bottom"></div>
-                        </div>
-                        <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 text-xs text-gray-500 dark:text-gray-400">N</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                {/* Wind Conditions - Disabled until MQTT sends wind data */}
+                {/* Wind components removed - will be re-enabled when MQTT sensors provide wind data */}
 
                 {/* Safety Alerts Summary */}
                 <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-lg">

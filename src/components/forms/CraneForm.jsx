@@ -10,11 +10,13 @@ const CraneForm = ({ onSubmit, onCancel, initialData = null, isEditing = false }
     swl: initialData?.swl || '',
     model: initialData?.specifications?.model || '',
     manufacturer: initialData?.specifications?.manufacturer || '',
-    // Location fields - only city for manual entry
+    // Location fields
     city: initialData?.locationData?.city || '',
     siteAddress: initialData?.locationData?.siteAddress || '',
-    // GSM will provide coordinates automatically via MQTT
-    method: 'gsm' // GSM will provide location data
+    // Manual coordinates (optional - for when MQTT GPS is not available)
+    latitude: initialData?.locationData?.coordinates?.[1] || '',
+    longitude: initialData?.locationData?.coordinates?.[0] || '',
+    method: 'manual' // Manual entry until MQTT GPS is available
   });
   
   const [errors, setErrors] = useState({});
@@ -63,8 +65,13 @@ const CraneForm = ({ onSubmit, onCancel, initialData = null, isEditing = false }
     if (!formData.swl || formData.swl <= 0) newErrors.swl = 'SWL must be greater than 0';
     if (!formData.city) newErrors.city = 'City is required';
     
-    // GSM location validation - no manual coordinates needed
-    // GPS coordinates will be provided automatically by GSM module
+    // Validate coordinates if provided (optional)
+    if (formData.latitude && (isNaN(parseFloat(formData.latitude)) || parseFloat(formData.latitude) < -90 || parseFloat(formData.latitude) > 90)) {
+      newErrors.latitude = 'Latitude must be between -90 and 90';
+    }
+    if (formData.longitude && (isNaN(parseFloat(formData.longitude)) || parseFloat(formData.longitude) < -180 || parseFloat(formData.longitude) > 180)) {
+      newErrors.longitude = 'Longitude must be between -180 and 180';
+    }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -92,9 +99,11 @@ const CraneForm = ({ onSubmit, onCancel, initialData = null, isEditing = false }
           model: formData.model.trim(),
           manufacturer: formData.manufacturer.trim()
         },
-        // GSM will provide GPS coordinates via MQTT
-        method: 'gsm',
-        accuracy: 150 // Default GSM accuracy
+        // Manual coordinates (optional - use if provided)
+        latitude: formData.latitude ? parseFloat(formData.latitude) : null,
+        longitude: formData.longitude ? parseFloat(formData.longitude) : null,
+        method: formData.latitude && formData.longitude ? 'manual' : 'city_default',
+        accuracy: formData.latitude && formData.longitude ? 5 : 5000 // Manual entry is more accurate
       };
       
       await onSubmit(submitData);
@@ -112,7 +121,7 @@ const CraneForm = ({ onSubmit, onCancel, initialData = null, isEditing = false }
           {isEditing ? 'Edit Crane' : 'Add New Crane'}
         </h2>
         <p className="text-gray-600 dark:text-gray-400">
-          {isEditing ? 'Update crane information and location' : 'Create a new crane with GSM location tracking'}
+          {isEditing ? 'Update crane information and location' : 'Create a new crane with location information'}
         </p>
       </div>
 
@@ -260,31 +269,76 @@ const CraneForm = ({ onSubmit, onCancel, initialData = null, isEditing = false }
             />
           </div>
 
+          {/* Manual GPS Coordinates (Optional) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Latitude (Optional)
+                <span className="text-xs text-gray-500 ml-1 font-normal">Manual entry if GPS unavailable</span>
+              </label>
+              <input
+                type="number"
+                name="latitude"
+                value={formData.latitude}
+                onChange={handleChange}
+                step="0.000001"
+                min="-90"
+                max="90"
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white ${
+                  errors.latitude ? 'border-red-500' : 'border-gray-300'
+                }`}
+                placeholder="12.9716"
+              />
+              {errors.latitude && <p className="text-red-500 text-sm mt-1">{errors.latitude}</p>}
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Longitude (Optional)
+                <span className="text-xs text-gray-500 ml-1 font-normal">Manual entry if GPS unavailable</span>
+              </label>
+              <input
+                type="number"
+                name="longitude"
+                value={formData.longitude}
+                onChange={handleChange}
+                step="0.000001"
+                min="-180"
+                max="180"
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white ${
+                  errors.longitude ? 'border-red-500' : 'border-gray-300'
+                }`}
+                placeholder="77.5946"
+              />
+              {errors.longitude && <p className="text-red-500 text-sm mt-1">{errors.longitude}</p>}
+            </div>
+          </div>
+
         </div>
 
-        {/* GSM Location Tracking Section */}
-        <div className="mt-6 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+        {/* Location Information Section */}
+        <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
           <div className="flex items-center mb-3">
-            <div className="w-8 h-8 bg-green-100 dark:bg-green-800 rounded-full flex items-center justify-center mr-3">
-              <span className="text-green-600 dark:text-green-400 text-lg">📡</span>
+            <div className="w-8 h-8 bg-blue-100 dark:bg-blue-800 rounded-full flex items-center justify-center mr-3">
+              <span className="text-blue-600 dark:text-blue-400 text-lg">📍</span>
             </div>
             <div>
-              <h3 className="text-lg font-medium text-green-900 dark:text-green-100">
-                GSM Location Tracking
+              <h3 className="text-lg font-medium text-blue-900 dark:text-blue-100">
+                Location Setup
               </h3>
-              <p className="text-sm text-green-700 dark:text-green-300">
-                Crane location will be automatically tracked via GSM triangulation
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                Enter GPS coordinates manually or use city-based location
               </p>
             </div>
           </div>
           
-          <div className="bg-white dark:bg-gray-800 p-3 rounded border border-green-200 dark:border-green-700">
+          <div className="bg-white dark:bg-gray-800 p-3 rounded border border-blue-200 dark:border-blue-700">
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              <strong>How it works:</strong> The crane's GSM module will automatically connect to nearby cell towers 
-              and provide GPS coordinates to your backend system via MQTT. No manual coordinate entry required.
+              <strong>Manual Entry:</strong> If you have the exact GPS coordinates (latitude/longitude), enter them above for precise map positioning.
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
-              📍 The system will use the selected city as a fallback location until GSM data is received.
+              📍 If coordinates are not provided, the system will use the city center as a fallback location. 
+              MQTT GPS data will override manual coordinates when available.
             </p>
           </div>
         </div>

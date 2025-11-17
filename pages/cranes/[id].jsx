@@ -36,6 +36,10 @@ export default function CraneDetail() {
     }
   );
 
+  // Extract crane data early (before hooks)
+  const crane = data?.data;
+  const telemetry = telemetryData?.data;
+
   // WebSocket subscription for real-time updates
   useEffect(() => {
     if (!connected || !id || !subscribeToTelemetry) return;
@@ -49,6 +53,40 @@ export default function CraneDetail() {
     return unsubscribe;
   }, [connected, id, refetch, subscribeToTelemetry]);
 
+  // Check for overload condition and show alert
+  useEffect(() => {
+    if (!crane) return;
+    
+    const isOverloaded = crane.lastStatusRaw?.overload === true || crane.lastStatusRaw?.overload === 1;
+    const overloadState = crane.lastStatusRaw?.overloadState;
+    
+    if (isOverloaded && overloadState === 'OVERLOAD') {
+      const overloadMinutes = crane.lastStatusRaw?.currentOverloadMinutes || 0;
+      const todayEvents = crane.lastStatusRaw?.todayOverloadEvents || 0;
+      const riskLevel = crane.lastStatusRaw?.riskLevel || 'LOW';
+      
+      // Show toast alert for overload
+      toast.error(
+        `⚠️ OVERLOAD ALERT: ${crane.name}\n` +
+        `Current overload: ${overloadMinutes.toFixed(1)} minutes\n` +
+        `Events today: ${todayEvents}\n` +
+        `Risk Level: ${riskLevel}`,
+        {
+          duration: 8000,
+          position: 'top-center',
+          style: {
+            background: '#991B1B',
+            color: '#FEE2E2',
+            fontWeight: 'bold',
+            border: '2px solid #DC2626',
+            fontSize: '16px'
+          }
+        }
+      );
+    }
+  }, [crane?.lastStatusRaw?.overload, crane?.lastStatusRaw?.overloadState, crane?.name]);
+
+  // Loading state
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -57,7 +95,8 @@ export default function CraneDetail() {
     );
   }
 
-  if (!data?.data) {
+  // Not found state
+  if (!crane) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -67,9 +106,6 @@ export default function CraneDetail() {
       </div>
     );
   }
-
-  const crane = data.data;
-  const telemetry = telemetryData?.data;
 
   // Format data for charts
   const formatUtilizationTrend = (data) => {
@@ -145,10 +181,27 @@ export default function CraneDetail() {
     formattedPeakLoadTrend: peakLoadTrendData
   });
 
-  const currentLoad = realTimeData?.data?.load || crane.currentLoad || 0;
+  // Use lastStatusRaw for most accurate real-time data
+  const currentLoad = crane.lastStatusRaw?.load !== undefined 
+    ? crane.lastStatusRaw.load 
+    : (realTimeData?.data?.load || crane.currentLoad || 0);
   const swl = crane.swl || 100;
-  const utilization = realTimeData?.data?.util || crane.utilization || 0;
-  const isOverloaded = currentLoad > swl;
+  const utilization = crane.lastStatusRaw?.utilizationPercentage !== undefined
+    ? crane.lastStatusRaw.utilizationPercentage
+    : (realTimeData?.data?.util || crane.utilization || 0);
+  // Check overload from OL bit, not just load > swl
+  const isOverloaded = crane.lastStatusRaw?.overload === true || crane.lastStatusRaw?.overload === 1;
+  
+  // Debug logging
+  console.log(`🔍 Crane Details Debug for ${crane.craneId}:`, {
+    testMode: crane.lastStatusRaw?.testMode,
+    utilState: crane.lastStatusRaw?.utilState,
+    utilizationPercentage: crane.lastStatusRaw?.utilizationPercentage,
+    overload: crane.lastStatusRaw?.overload,
+    overloadState: crane.lastStatusRaw?.overloadState,
+    load: crane.lastStatusRaw?.load,
+    currentLoad
+  });
 
   // Generate historical data for the last 7 days
   const generateHistoricalData = () => {
@@ -236,15 +289,23 @@ export default function CraneDetail() {
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-6">
           <div>
             <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3">Limit Switches</p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-3">
               {['ls1', 'ls2', 'ls3', 'ls4'].map((ls) => {
                 const status = crane.lastStatusRaw?.[ls] || 'UNKNOWN';
-                const isOk = status === 'OK';
+                const dotColor = status === 'OK' ? 'bg-green-400' : 
+                                 status === 'HIT' ? 'bg-yellow-400 animate-pulse' : 
+                                 status === 'FAIL' ? 'bg-red-400 animate-pulse' : 
+                                 'bg-gray-400';
+                const textColor = status === 'OK' ? 'text-green-600 dark:text-green-400' : 
+                                  status === 'HIT' ? 'text-yellow-600 dark:text-yellow-400' : 
+                                  status === 'FAIL' ? 'text-red-600 dark:text-red-400' : 
+                                  'text-gray-500';
                 return (
                   <div key={ls} className="flex items-center space-x-2">
-                    <div className={`w-2 h-2 rounded-full ${isOk ? 'bg-green-400' : 'bg-red-400'}`}></div>
-                    <span className="text-xs font-medium text-gray-900 dark:text-white uppercase">{ls}</span>
-              </div>
+                    <div className={`w-3 h-3 rounded-full ${dotColor}`}></div>
+                    <span className="text-xs font-semibold uppercase">{ls}</span>
+                    <span className={`text-xs font-bold ${textColor}`}>({status})</span>
+                  </div>
                 );
               })}
             </div>
@@ -252,44 +313,83 @@ export default function CraneDetail() {
         </div>
 
         {/* Load Status */}
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-6">
+        <div className={`bg-white dark:bg-gray-800 border rounded-xl shadow-lg p-6 ${
+          isOverloaded 
+            ? 'border-red-500 dark:border-red-600 animate-pulse' 
+            : 'border-gray-200 dark:border-gray-700'
+        }`}>
           <div>
-            <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Load Status</p>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Current Load</p>
             <div className="flex items-baseline space-x-2">
-              <span className={`text-2xl font-bold ${isOverloaded ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+              <span className={`text-3xl font-bold ${isOverloaded ? 'text-red-600 dark:text-red-400 animate-pulse' : 'text-gray-900 dark:text-white'}`}>
                 {currentLoad}t
               </span>
-              <span className="text-gray-500 dark:text-gray-400">/ {swl}t</span>
-              </div>
-            <div className="mt-3">
-              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                <div 
-                  className={`h-2 rounded-full transition-all duration-300 ${
-                    isOverloaded 
-                      ? 'bg-red-500' 
-                      : currentLoad / swl > 0.8 
-                        ? 'bg-yellow-500' 
-                        : 'bg-green-500'
-                  }`}
-                  style={{ width: `${Math.min((currentLoad / swl) * 100, 100)}%` }}
-                ></div>
-              </div>
               {isOverloaded && (
-                <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium">Overloaded!</p>
+                <span className="text-xs font-bold text-red-600 dark:text-red-400">⚠️ OVERLOAD</span>
               )}
             </div>
+            {isOverloaded && (
+              <div className="mt-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-2">
+                <p className="text-xs text-red-700 dark:text-red-300 font-bold flex items-center">
+                  <ExclamationTriangleIcon className="h-4 w-4 mr-1 animate-pulse" />
+                  OVERLOAD CONDITION DETECTED!
+                </p>
+                <div className="mt-1 text-xs text-red-600 dark:text-red-400">
+                  <p>Duration: {(crane.lastStatusRaw?.currentOverloadMinutes || 0).toFixed(1)} min</p>
+                  <p>Events Today: {crane.lastStatusRaw?.todayOverloadEvents || 0}</p>
+                  <p>Risk Level: {crane.lastStatusRaw?.riskLevel || 'UNKNOWN'}</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Utilization */}
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-6">
+        <div className={`bg-white dark:bg-gray-800 border rounded-xl shadow-lg p-6 ${
+          crane.lastStatusRaw?.utilState === 'WORKING'
+            ? 'border-green-500 dark:border-green-600'
+            : 'border-gray-200 dark:border-gray-700'
+        }`}>
           <div>
-            <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Utilization (Current)</p>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+              Utilization 
+              {crane.lastStatusRaw?.utilState && (
+                <span className={`ml-2 text-xs font-bold ${
+                  crane.lastStatusRaw.utilState === 'WORKING' 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : 'text-gray-500 dark:text-gray-400'
+                }`}>
+                  {crane.lastStatusRaw.utilState === 'WORKING' ? '🟢 WORKING' : '⚫ IDLE'}
+                </span>
+              )}
+            </p>
             <div className="flex items-center space-x-2">
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">{utilization}%</span>
-              <ArrowUpIcon className="h-4 w-4 text-green-500" />
-              </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Last 24 hours</p>
+              <span className={`text-2xl font-bold ${
+                crane.lastStatusRaw?.utilState === 'WORKING'
+                  ? 'text-green-600 dark:text-green-400'
+                  : 'text-gray-900 dark:text-white'
+              }`}>
+                {crane.lastStatusRaw?.utilizationPercentage !== undefined 
+                  ? `${crane.lastStatusRaw.utilizationPercentage.toFixed(1)}%`
+                  : `${utilization}%`}
+              </span>
+              {crane.lastStatusRaw?.utilState === 'WORKING' && (
+                <ArrowUpIcon className="h-4 w-4 text-green-500 animate-pulse" />
+              )}
+            </div>
+            <div className="mt-2 space-y-1">
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                Today: {crane.lastStatusRaw?.utilizationHours?.toFixed(2) || '0.00'}h
+                {crane.lastStatusRaw?.currentSessionHours > 0 && (
+                  <span className="ml-2 text-green-600 dark:text-green-400 font-semibold">
+                    (Session: {crane.lastStatusRaw.currentSessionHours.toFixed(2)}h)
+                  </span>
+                )}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Total elapsed: {crane.lastStatusRaw?.totalDayHours?.toFixed(1) || '0.0'}h
+              </p>
+            </div>
           </div>
         </div>
       </div>

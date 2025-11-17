@@ -2,11 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useSocket } from '../lib/socket';
 import { cranesAPI } from '../lib/api';
 import { 
-  ExclamationTriangleIcon, 
   CheckCircleIcon, 
   XCircleIcon,
   ClockIcon,
-  MapPinIcon,
   WrenchScrewdriverIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
@@ -23,7 +21,7 @@ const PendingCranesManager = ({ onCraneApproved }) => {
     try {
       setLoading(true);
       const response = await cranesAPI.getPendingCranes();
-      setPendingCranes(response.pendingCranes || []);
+      setPendingCranes(response?.data?.pendingCranes || []);
     } catch (error) {
       console.error('Error fetching pending cranes:', error);
       toast.error('Failed to fetch pending cranes');
@@ -96,9 +94,16 @@ const PendingCranesManager = ({ onCraneApproved }) => {
       setShowApprovalForm(false);
       setSelectedCrane(null);
       fetchPendingCranes();
+      if (onCraneApproved) {
+        // Fetch the updated crane list to get the newly approved crane
+        fetchPendingCranes();
+      }
     } catch (error) {
       console.error('Error approving crane:', error);
-      toast.error('Failed to approve crane');
+      const errorMessage = error.response?.data?.error || 
+                          error.response?.data?.message || 
+                          'Failed to approve crane';
+      toast.error(errorMessage);
     }
   };
 
@@ -138,59 +143,61 @@ const PendingCranesManager = ({ onCraneApproved }) => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {pendingCranes.map((crane) => (
-          <div key={crane.craneId} className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center space-x-2 mb-2">
-                  <ExclamationTriangleIcon className="h-5 w-5 text-yellow-500" />
-                  <h4 className="text-sm font-medium text-gray-900 dark:text-white">
-                    {crane.name}
-                  </h4>
+          <div key={crane.craneId} className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-2 border-blue-300 dark:border-blue-700 rounded-xl p-5 shadow-lg hover:shadow-xl transition-all duration-200">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                {/* Crane Icon */}
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md p-2">
+                  <img 
+                    src="https://cdn-icons-png.flaticon.com/128/10549/10549312.png" 
+                    alt="Tower Crane" 
+                    className="w-full h-full object-contain"
+                  />
                 </div>
                 
-                <div className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                  <div className="flex items-center space-x-1">
-                    <span className="font-medium">ID:</span>
-                    <span className="font-mono">{crane.craneId}</span>
-                  </div>
-                  
-                  <div className="flex items-center space-x-1">
-                    <MapPinIcon className="h-3 w-3" />
-                    <span>{crane.location}</span>
-                  </div>
-                  
-                  <div className="flex items-center space-x-1">
-                    <span className="font-medium">SWL:</span>
-                    <span>{crane.swl}kg</span>
-                  </div>
-                  
-                  <div className="flex items-center space-x-1">
-                    <ClockIcon className="h-3 w-3" />
-                    <span>Discovered: {new Date(crane.discoveredAt).toLocaleString()}</span>
-                  </div>
-                  
-                  <div className="flex items-center space-x-1">
-                    <span className="font-medium">Telemetry:</span>
-                    <span>{crane.telemetryCount} messages</span>
-                  </div>
+                <div>
+                  <h4 className="text-lg font-bold text-gray-900 dark:text-white">
+                    Crane {crane.craneId}
+                  </h4>
+                  <p className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                    Pending Approval
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="space-y-2 mb-4">
+              <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
+                <ClockIcon className="h-4 w-4 text-blue-500" />
+                <span className="text-xs">
+                  Discovered: {new Date(crane.discoveredAt).toLocaleString()}
+                </span>
+              </div>
+              
+              <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
+                <div className="flex items-center space-x-1">
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                  <span className="text-xs font-medium">
+                    {crane.telemetryCount} telemetry messages received
+                  </span>
                 </div>
               </div>
             </div>
 
-            <div className="mt-4 flex space-x-2">
+            <div className="flex space-x-2">
               <button
                 onClick={() => handleApprove(crane)}
-                className="flex-1 bg-green-600 text-white text-xs px-3 py-1 rounded hover:bg-green-700 transition-colors"
+                className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center justify-center space-x-1"
               >
-                <CheckCircleIcon className="h-3 w-3 inline mr-1" />
-                Approve
+                <CheckCircleIcon className="h-4 w-4" />
+                <span>Approve</span>
               </button>
               <button
                 onClick={() => handleReject(crane.craneId)}
-                className="flex-1 bg-red-600 text-white text-xs px-3 py-1 rounded hover:bg-red-700 transition-colors"
+                className="flex-1 bg-gradient-to-r from-red-600 to-pink-600 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:from-red-700 hover:to-pink-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center justify-center space-x-1"
               >
-                <XCircleIcon className="h-3 w-3 inline mr-1" />
-                Reject
+                <XCircleIcon className="h-4 w-4" />
+                <span>Reject</span>
               </button>
             </div>
           </div>
@@ -214,17 +221,46 @@ const PendingCranesManager = ({ onCraneApproved }) => {
 
 // Approval Form Component
 const ApprovalForm = ({ crane, onSubmit, onCancel }) => {
+  // Clean up default values - replace "Unknown" text
+  const getCleanName = () => {
+    if (crane.name.includes('Unknown')) {
+      return `Crane ${crane.craneId}`;
+    }
+    return crane.name;
+  };
+
+  const getCleanLocation = () => {
+    if (crane.location === 'Unknown Location' || crane.location === 'Pending Approval') {
+      return '';
+    }
+    return crane.location;
+  };
+
   const [formData, setFormData] = useState({
-    name: crane.name,
-    location: crane.location,
-    swl: crane.swl,
+    name: getCleanName(),
+    location: getCleanLocation(),
+    swl: crane.swl || 5000, // Keep SWL from crane data, default to 5000kg
     managerUserId: '',
     operators: [],
     assignedSupervisors: []
   });
+  const [error, setError] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    
+    // Validate name and location
+    if (!formData.name || formData.name.trim() === '') {
+      setError('Please provide a crane name');
+      return;
+    }
+    
+    if (!formData.location || formData.location.trim() === '') {
+      setError('Please provide a location');
+      return;
+    }
+    
+    setError('');
     onSubmit(formData);
   };
 
@@ -235,44 +271,55 @@ const ApprovalForm = ({ crane, onSubmit, onCancel }) => {
           Approve Crane: {crane.craneId}
         </h3>
         
+        {/* Error Message */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-md">
+            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          </div>
+        )}
+        
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Crane Name
+              Crane Name *
             </label>
             <input
               type="text"
               value={formData.name}
               onChange={(e) => setFormData({...formData, name: e.target.value})}
+              placeholder="e.g., Tower Crane Site-A, Mobile Crane #1"
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
               required
             />
+            <p className="mt-1 text-xs text-blue-600 dark:text-blue-400 font-medium">
+              💡 Give this crane a descriptive name (e.g., "Tower Crane Site-B")
+            </p>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Location
+              Location *
             </label>
             <input
               type="text"
               value={formData.location}
               onChange={(e) => setFormData({...formData, location: e.target.value})}
+              placeholder="e.g., Construction Site B, Warehouse 2, Bangalore"
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
               required
             />
+            <p className="mt-1 text-xs text-blue-600 dark:text-blue-400 font-medium">
+              💡 Where is this crane located? (e.g., "Construction Site B")
+            </p>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Safe Working Load (kg)
-            </label>
-            <input
-              type="number"
-              value={formData.swl}
-              onChange={(e) => setFormData({...formData, swl: parseInt(e.target.value)})}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-              required
-            />
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-3 mt-2">
+            <p className="text-xs text-blue-700 dark:text-blue-300 font-medium flex items-center">
+              <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+              Load data will be received from MQTT telemetry
+            </p>
           </div>
 
           <div className="flex space-x-3 pt-4">

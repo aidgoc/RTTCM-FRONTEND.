@@ -23,7 +23,7 @@ export default function Users() {
       refetchInterval: 10000, // Auto-refresh every 10 seconds
     }
   );
-
+''
   // Fetch cranes for assignment
   const { data: cranesData } = useQuery(
     'cranes',
@@ -311,22 +311,20 @@ export default function Users() {
                         </div>
                       )}
                       
-                      {/* Managed Cranes (for managers) - only show for admin */}
+                      {/* Managed Cranes (for managers) - show for admin */}
                       {user.role === 'admin' && userData.role === 'manager' && (
                         <div className="flex items-center space-x-2">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">Managed:</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">Assigned:</span>
                           <span className="text-sm font-medium text-gray-900 dark:text-white">
                             {getAssignmentCount(userData, 'assignedCranes')}
                           </span>
-                          {/* Only show Assign button for managers (not admins) */}
-                          {user.role === 'manager' && (
-                            <button
-                              onClick={() => handleAssignCranes(userData, 'assignedCranes')}
-                              className="text-xs bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 px-2 py-1 rounded hover:bg-green-200 dark:hover:bg-green-800"
-                            >
-                              Assign
-                            </button>
-                          )}
+                          {/* Admin can assign cranes to managers */}
+                          <button
+                            onClick={() => handleAssignCranes(userData, 'assignedCranes')}
+                            className="text-xs bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-3 py-1.5 rounded-lg hover:from-blue-600 hover:to-indigo-700 font-semibold shadow-sm transition-all"
+                          >
+                            Assign Cranes
+                          </button>
                         </div>
                       )}
                       

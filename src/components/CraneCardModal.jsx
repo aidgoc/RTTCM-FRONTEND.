@@ -16,10 +16,10 @@ const CraneCardModal = ({ crane, isOpen, onClose, onAnalyticsClick }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   
-  // Get wind speed from crane data or show no data
-  const getWindSpeed = () => {
-    return crane?.windSpeed || 0; // Use real wind speed data from crane
-  };
+  // Wind speed function removed - will be re-enabled when MQTT provides wind data
+  // const getWindSpeed = () => {
+  //   return crane?.windSpeed || 0;
+  // };
   
   // Memoized calculations to prevent re-computation
   const statusConfig = useMemo(() => crane ? getStatusConfig(crane) : null, [crane]);
@@ -170,56 +170,8 @@ const CraneCardModal = ({ crane, isOpen, onClose, onAnalyticsClick }) => {
             </div>
           </div>
 
-          {/* Wind Speed */}
-          <div className="mb-4">
-            <div className="bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-900 dark:to-blue-900 border border-cyan-200 dark:border-cyan-600 rounded-lg p-3 group-hover:from-cyan-100 group-hover:to-blue-100 dark:group-hover:from-cyan-800 dark:group-hover:to-blue-800 group-hover:border-cyan-300 dark:group-hover:border-cyan-500 transition-all duration-300">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <svg className="h-5 w-5 text-cyan-600 dark:text-cyan-400 group-hover:text-cyan-700 dark:group-hover:text-cyan-300 transition-colors duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-                  </svg>
-                  <span className="text-sm font-semibold text-cyan-700 dark:text-cyan-300 group-hover:text-cyan-800 dark:group-hover:text-cyan-200 transition-colors duration-300">
-                    Wind Speed
-                  </span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className={`text-2xl font-bold transition-colors duration-300 ${
-                    (crane.lastStatusRaw?.windSpeed || getWindSpeed()) > 20 
-                      ? 'text-red-600 dark:text-red-400 group-hover:text-red-700 dark:group-hover:text-red-300' 
-                      : (crane.lastStatusRaw?.windSpeed || getWindSpeed()) > 15 
-                      ? 'text-yellow-600 dark:text-yellow-400 group-hover:text-yellow-700 dark:group-hover:text-yellow-300'
-                      : 'text-green-600 dark:text-green-400 group-hover:text-green-700 dark:group-hover:text-green-300'
-                  }`}>
-                    {(crane.lastStatusRaw?.windSpeed || getWindSpeed()).toFixed(1)}
-                  </div>
-                  <span className="text-sm text-cyan-600 dark:text-cyan-400 group-hover:text-cyan-700 dark:group-hover:text-cyan-300 transition-colors duration-300 font-medium">
-                    km/h
-                  </span>
-                </div>
-              </div>
-              <div className="mt-2">
-                <div className="flex items-center justify-between text-xs text-cyan-600 dark:text-cyan-400 group-hover:text-cyan-700 dark:group-hover:text-cyan-300 transition-colors duration-300">
-                  <span>Safe: 0-15 km/h</span>
-                  <span>Caution: 15-20 km/h</span>
-                  <span>Danger: 20+ km/h</span>
-                </div>
-                <div className="mt-1 w-full bg-cyan-200 dark:bg-cyan-700 rounded-full h-2">
-                  <div 
-                    className={`h-2 rounded-full transition-all duration-500 ${
-                      (crane.lastStatusRaw?.windSpeed || getWindSpeed()) > 20 
-                        ? 'bg-red-500' 
-                        : (crane.lastStatusRaw?.windSpeed || getWindSpeed()) > 15 
-                        ? 'bg-yellow-500'
-                        : 'bg-green-500'
-                    }`}
-                    style={{ 
-                      width: `${Math.min(((crane.lastStatusRaw?.windSpeed || getWindSpeed()) / 30) * 100, 100)}%` 
-                    }}
-                  ></div>
-                </div>
-              </div>
-            </div>
-          </div>
+          {/* Wind Speed - Disabled until MQTT sends wind data */}
+          {/* Wind components removed - will be re-enabled when MQTT sensors provide wind data */}
 
           {/* Limit Switch Cards */}
           <div className="mb-4">

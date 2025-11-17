@@ -5,9 +5,7 @@ import { settingsAPI } from '../src/lib/api';
 import { useTheme } from '../src/contexts/ThemeContext';
 import toast from 'react-hot-toast';
 import { 
-  CogIcon, 
-  ServerIcon, 
-  BellIcon,
+  CogIcon,
   ShieldCheckIcon
 } from '@heroicons/react/24/outline';
 
@@ -26,15 +24,6 @@ export default function Settings() {
       onSuccess: (data) => {
         setFormData(data.settings || {});
       }
-    }
-  );
-
-  // Fetch system status
-  const { data: systemStatus, isLoading: statusLoading } = useQuery(
-    'system-status',
-    settingsAPI.getSystemStatus,
-    {
-      refetchInterval: 30000, // Refresh every 30 seconds
     }
   );
 
@@ -69,8 +58,6 @@ export default function Settings() {
 
   const tabs = [
     { id: 'general', name: 'General', icon: CogIcon },
-    { id: 'system', name: 'System', icon: ServerIcon },
-    { id: 'notifications', name: 'Notifications', icon: BellIcon },
     { id: 'security', name: 'Security', icon: ShieldCheckIcon },
   ];
 
@@ -142,166 +129,17 @@ export default function Settings() {
           </div>
         );
 
-      case 'system':
-        return (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-medium text-gray-900">System Configuration</h3>
-              <p className="text-sm text-gray-500">Real-time system status and configuration</p>
-            </div>
-            
-            {statusLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-600"></div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className={`border rounded-lg p-4 ${
-                  systemStatus?.mqtt?.connected ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-                }`}>
-                  <h4 className={`text-sm font-medium ${
-                    systemStatus?.mqtt?.connected ? 'text-green-900' : 'text-red-900'
-                  }`}>MQTT Configuration</h4>
-                  <p className={`text-sm mt-1 ${
-                    systemStatus?.mqtt?.connected ? 'text-green-700' : 'text-red-700'
-                  }`}>
-                    Broker: {systemStatus?.mqtt?.broker || 'Not configured'}
-                  </p>
-                  <p className={`text-sm ${
-                    systemStatus?.mqtt?.connected ? 'text-green-700' : 'text-red-700'
-                  }`}>
-                    Status: {systemStatus?.mqtt?.connected ? 'Connected' : 'Disconnected'}
-                  </p>
-                  {systemStatus?.mqtt?.lastMessage && (
-                    <p className={`text-xs mt-1 ${
-                      systemStatus?.mqtt?.connected ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      Last message: {new Date(systemStatus.mqtt.lastMessage).toLocaleString()}
-                    </p>
-                  )}
-                </div>
-                
-                <div className={`border rounded-lg p-4 ${
-                  systemStatus?.database?.connected ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-                }`}>
-                  <h4 className={`text-sm font-medium ${
-                    systemStatus?.database?.connected ? 'text-green-900' : 'text-red-900'
-                  }`}>Database Status</h4>
-                  <p className={`text-sm mt-1 ${
-                    systemStatus?.database?.connected ? 'text-green-700' : 'text-red-700'
-                  }`}>
-                    MongoDB: {systemStatus?.database?.connected ? 'Connected' : 'Disconnected'}
-                  </p>
-                  <p className={`text-sm ${
-                    systemStatus?.database?.connected ? 'text-green-700' : 'text-red-700'
-                  }`}>
-                    Collections: {systemStatus?.database?.collections || 0} active
-                  </p>
-                  {systemStatus?.database?.lastCheck && (
-                    <p className={`text-xs mt-1 ${
-                      systemStatus?.database?.connected ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      Last check: {new Date(systemStatus.database.lastCheck).toLocaleString()}
-                    </p>
-                  )}
-                </div>
-                
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h4 className="text-sm font-medium text-blue-900">Server Status</h4>
-                  <p className="text-sm text-blue-700 mt-1">
-                    Backend: {systemStatus?.server?.backend?.status || 'Unknown'} on port {systemStatus?.server?.backend?.port || 'N/A'}
-                  </p>
-                  <p className="text-sm text-blue-700">
-                    Frontend: {systemStatus?.server?.frontend?.status || 'Unknown'} on port {systemStatus?.server?.frontend?.port || 'N/A'}
-                  </p>
-                  {systemStatus?.server?.backend?.uptime && (
-                    <p className="text-xs text-blue-600 mt-1">
-                      Uptime: {Math.floor(systemStatus.server.backend.uptime / 3600)}h {Math.floor((systemStatus.server.backend.uptime % 3600) / 60)}m
-                    </p>
-                  )}
-                </div>
-
-                <div className="text-xs text-gray-500 mt-4">
-                  Last updated: {systemStatus?.timestamp ? new Date(systemStatus.timestamp).toLocaleString() : 'Never'}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-
-
-      case 'notifications':
-        return (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-medium text-gray-900">Notification Settings</h3>
-              <p className="text-sm text-gray-500">Configure how you receive alerts and updates</p>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-sm font-medium text-gray-900">Email Notifications</h4>
-                  <p className="text-sm text-gray-500">Receive alerts via email</p>
-                </div>
-                <input 
-                  type="checkbox" 
-                  checked={formData.emailNotifications || false}
-                  onChange={(e) => handleInputChange('emailNotifications', e.target.checked)}
-                  className="h-4 w-4 text-sky-600 focus:ring-sky-500 border-gray-300 rounded" 
-                />
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-sm font-medium text-gray-900">Browser Notifications</h4>
-                  <p className="text-sm text-gray-500">Show browser notifications</p>
-                </div>
-                <input 
-                  type="checkbox" 
-                  checked={formData.browserNotifications || false}
-                  onChange={(e) => handleInputChange('browserNotifications', e.target.checked)}
-                  className="h-4 w-4 text-sky-600 focus:ring-sky-500 border-gray-300 rounded" 
-                />
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-sm font-medium text-gray-900">Critical Alerts</h4>
-                  <p className="text-sm text-gray-500">Immediate notifications for critical issues</p>
-                </div>
-                <input 
-                  type="checkbox" 
-                  checked={formData.criticalAlerts || false}
-                  onChange={(e) => handleInputChange('criticalAlerts', e.target.checked)}
-                  className="h-4 w-4 text-sky-600 focus:ring-sky-500 border-gray-300 rounded" 
-                />
-              </div>
-
-              <div className="pt-4">
-                <button
-                  onClick={handleSave}
-                  disabled={updateSettingsMutation.isLoading}
-                  className="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50"
-                >
-                  {updateSettingsMutation.isLoading ? 'Saving...' : 'Save Notification Settings'}
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-
       case 'security':
         return (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-medium text-gray-900">Security Settings</h3>
-              <p className="text-sm text-gray-500">Configure security and access controls</p>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">Security Settings</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Configure security and access controls</p>
             </div>
             
             <div className="space-y-4">
               <div>
-                <h4 className="text-sm font-medium text-gray-900">Session Timeout</h4>
+                <h4 className="text-sm font-medium text-gray-900 dark:text-white">Session Timeout</h4>
                 <select 
                   value={formData.sessionTimeout || '30 minutes'}
                   onChange={(e) => handleInputChange('sessionTimeout', e.target.value)}
@@ -315,7 +153,7 @@ export default function Settings() {
               </div>
               
               <div>
-                <h4 className="text-sm font-medium text-gray-900">Password Policy</h4>
+                <h4 className="text-sm font-medium text-gray-900 dark:text-white">Password Policy</h4>
                 <div className="mt-2 space-y-2">
                   <div className="flex items-center">
                     <input 
@@ -324,7 +162,7 @@ export default function Settings() {
                       onChange={(e) => handleInputChange('requireStrongPasswords', e.target.checked)}
                       className="h-4 w-4 text-sky-600 focus:ring-sky-500 border-gray-300 rounded" 
                     />
-                    <label className="ml-2 text-sm text-gray-700">Require strong passwords</label>
+                    <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">Require strong passwords</label>
                   </div>
                   <div className="flex items-center">
                     <input 
@@ -333,7 +171,7 @@ export default function Settings() {
                       onChange={(e) => handleInputChange('passwordChangeInterval', e.target.checked ? 90 : 0)}
                       className="h-4 w-4 text-sky-600 focus:ring-sky-500 border-gray-300 rounded" 
                     />
-                    <label className="ml-2 text-sm text-gray-700">Require password change every 90 days</label>
+                    <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">Require password change every 90 days</label>
                   </div>
                 </div>
               </div>

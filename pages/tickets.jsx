@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { useQuery } from 'react-query';
+import { useQuery, useQueryClient } from 'react-query';
 import { ticketsAPI } from '../src/lib/api';
 import { useAuth } from '../src/lib/auth';
+import toast from 'react-hot-toast';
 
 export default function Tickets() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [filters, setFilters] = useState({
     status: 'all',
     severity: 'all',
@@ -19,6 +21,25 @@ export default function Tickets() {
       refetchIntervalInBackground: true,
     }
   );
+
+  const handleResolve = async (ticket) => {
+    try {
+      const resolution = `Resolved by ${user.name || user.email} on ${new Date().toLocaleString()}`;
+      await ticketsAPI.update(ticket._id, {
+        status: 'resolved',
+        resolution: resolution
+      });
+      
+      toast.success('Ticket resolved successfully');
+      // Invalidate and refetch tickets
+      queryClient.invalidateQueries(['tickets']);
+      // Also refetch cranes to update ticket status on cards
+      queryClient.invalidateQueries(['cranes']);
+    } catch (error) {
+      console.error('Resolve ticket error:', error);
+      toast.error('Failed to resolve ticket');
+    }
+  };
 
   const allTickets = data?.data?.tickets || [];
 
@@ -56,6 +77,8 @@ export default function Tickets() {
         return <span className="status-warning">Open</span>;
       case 'in_progress':
         return <span className="status-normal">In Progress</span>;
+      case 'resolved':
+        return <span className="status-normal">Resolved</span>;
       case 'closed':
         return <span className="status-offline">Closed</span>;
       default:
@@ -118,6 +141,7 @@ export default function Tickets() {
                 <option value="all">All Status</option>
                 <option value="open">Open</option>
                 <option value="in_progress">In Progress</option>
+                <option value="resolved">Resolved</option>
                 <option value="closed">Closed</option>
               </select>
             </div>
@@ -166,16 +190,21 @@ export default function Tickets() {
                   <div className="flex-1">
                     <div className="flex items-center space-x-2 mb-2">
                       <h3 className="text-lg font-medium text-gray-900 dark:text-white group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors duration-300">
-                        {ticket.message}
+                        {ticket.title || ticket.message || 'Untitled Ticket'}
                       </h3>
                       {getSeverityBadge(ticket.severity)}
                       {getStatusBadge(ticket.status)}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-300 mb-2 group-hover:text-gray-700 dark:group-hover:text-gray-200 transition-colors duration-300">
                       <span className="font-medium">Crane:</span> {ticket.craneId} • 
-                      <span className="font-medium ml-1">Type:</span> {ticket.type.replace('_', ' ')} • 
+                      <span className="font-medium ml-1">Type:</span> {(ticket.type || '').replace('_', ' ')} • 
                       <span className="font-medium ml-1">Created:</span> {new Date(ticket.createdAt).toLocaleString()}
                     </div>
+                    {ticket.description && (
+                      <div className="text-sm text-gray-600 dark:text-gray-300 mb-2 bg-gray-50 dark:bg-gray-700 p-2 rounded-md">
+                        {ticket.description}
+                      </div>
+                    )}
                     {ticket.resolution && (
                       <div className="text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 p-3 rounded-md group-hover:bg-gray-100 dark:group-hover:bg-gray-600 transition-colors duration-300">
                         <span className="font-medium">Resolution:</span> {ticket.resolution}
@@ -192,6 +221,17 @@ export default function Tickets() {
                       {ticket.status === 'open' && (
                         <button className="btn-primary text-xs px-3 py-1 group-hover:scale-105 transition-transform duration-300">
                           Assign
+                        </button>
+                      )}
+                      {(ticket.status === 'open' || ticket.status === 'in_progress') && (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleResolve(ticket);
+                          }}
+                          className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1 rounded-md group-hover:scale-105 transition-all duration-300 font-semibold"
+                        >
+                          Resolve
                         </button>
                       )}
                       {ticket.status === 'in_progress' && (
