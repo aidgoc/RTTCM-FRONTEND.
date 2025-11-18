@@ -20,6 +20,7 @@ export default function CraneCard({ crane, userRole, onAssign }) {
   const router = useRouter();
   const [isHovered, setIsHovered] = useState(false);
   const [hasOpenTickets, setHasOpenTickets] = useState(false);
+  const [openTicketCount, setOpenTicketCount] = useState(0);
   const queryClient = useQueryClient();
 
   // Check for open tickets when crane data changes
@@ -43,12 +44,14 @@ export default function CraneCard({ crane, userRole, onAssign }) {
         );
         console.log(`✅ Open tickets for ${crane.craneId}:`, openTickets.length, openTickets);
         setHasOpenTickets(openTickets.length > 0);
+        setOpenTicketCount(openTickets.length);
         // Also update lastStatusRaw if we have open tickets but lastStatusRaw doesn't show it
         if (openTickets.length > 0 && !crane.lastStatusRaw?.isTicketOpen) {
           // Update the crane's lastStatusRaw in the local state
           crane.lastStatusRaw = crane.lastStatusRaw || {};
           crane.lastStatusRaw.isTicketOpen = true;
           crane.lastStatusRaw.ticketNumber = openTickets[0].ticketNumber || openTickets[0].ticketId;
+          crane.lastStatusRaw.openTicketCount = openTickets.length;
         }
       } catch (error) {
         console.error(`❌ Error checking open tickets for ${crane.craneId}:`, error);
@@ -431,9 +434,14 @@ export default function CraneCard({ crane, userRole, onAssign }) {
                   : 'text-green-700 dark:text-green-300 group-hover:text-green-800 dark:group-hover:text-green-200'
               }`}>
                 {(hasOpenTickets || crane.lastStatusRaw?.isTicketOpen) 
-                  ? `Ticket${hasOpenTickets ? 's' : ''} #${crane.lastStatusRaw?.ticketNumber || '?'}`
+                  ? `${openTicketCount || crane.lastStatusRaw?.openTicketCount || 1} Ticket${(openTicketCount || crane.lastStatusRaw?.openTicketCount || 1) > 1 ? 's' : ''} Raised`
                   : 'No Tickets'}
               </span>
+              {(hasOpenTickets || crane.lastStatusRaw?.isTicketOpen) && openTicketCount > 0 && (
+                <span className="ml-1 px-2 py-0.5 bg-red-600 dark:bg-red-700 text-white text-xs font-bold rounded-full animate-pulse">
+                  {openTicketCount}
+                </span>
+              )}
             </div>
           </div>
         </div>

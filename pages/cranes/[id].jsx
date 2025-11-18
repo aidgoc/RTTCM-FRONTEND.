@@ -19,6 +19,20 @@ export default function CraneDetail() {
   const id = typeof window !== 'undefined' ? (router.query?.id || new URLSearchParams(window.location.search).get('id')) : undefined;
   const { connected, subscribeToTelemetry } = useSocket();
   const [realTimeData, setRealTimeData] = useState(null);
+  
+  // Date range filter state
+  const [dateFrom, setDateFrom] = useState(() => {
+    // Default: 7 days ago
+    const date = new Date();
+    date.setDate(date.getDate() - 7);
+    return date.toISOString().split('T')[0];
+  });
+  const [dateTo, setDateTo] = useState(() => {
+    // Default: today
+    return new Date().toISOString().split('T')[0];
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const historyLimit = 100;
 
   const { data, isLoading, refetch } = useQuery(
     ['crane', id],
@@ -33,6 +47,21 @@ export default function CraneDetail() {
     () => cranesAPI.getTelemetryStats(id, { from: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() }),
     {
       enabled: !!id,
+    }
+  );
+
+  // Fetch telemetry history with date range
+  const { data: telemetryHistory, isLoading: historyLoading, refetch: refetchHistory } = useQuery(
+    ['crane-telemetry-history', id, dateFrom, dateTo, currentPage],
+    () => cranesAPI.getTelemetryHistory(id, { 
+      from: new Date(dateFrom).toISOString(), 
+      to: new Date(dateTo + 'T23:59:59').toISOString(), 
+      page: currentPage, 
+      limit: historyLimit 
+    }),
+    {
+      enabled: !!id && !!dateFrom && !!dateTo,
+      keepPreviousData: true, // Keep previous data while loading new page
     }
   );
 
@@ -203,42 +232,6 @@ export default function CraneDetail() {
     currentLoad
   });
 
-  // Generate historical data for the last 7 days
-  const generateHistoricalData = () => {
-    const data = [];
-    const now = new Date();
-    
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-      const dayName = date.toLocaleDateString('en', { weekday: 'short' });
-      const dayNum = date.getDate();
-      const monthNum = date.getMonth() + 1;
-      
-      // Generate realistic data based on crane ID for consistency
-      const baseSeed = crane.craneId.charCodeAt(crane.craneId.length - 1) || 1;
-      const daySeed = (baseSeed + i) % 7;
-      
-      // Generate limit switch trigger counts (0-50 range)
-      const ls1 = Math.floor((baseSeed * 1 + daySeed * 3) % 51);
-      const ls2 = Math.floor((baseSeed * 2 + daySeed * 5) % 51);
-      const ls3 = Math.floor((baseSeed * 3 + daySeed * 7) % 51);
-      const ls4 = Math.floor((baseSeed * 4 + daySeed * 11) % 51);
-      
-      // Generate utilization (30-120 minutes range)
-      const utilization = Math.floor((baseSeed * 5 + daySeed * 13) % 91) + 30;
-      
-      data.push({
-        date: `${dayName}, ${monthNum}/${dayNum}`,
-        ls1: ls1,
-        ls2: ls2,
-        ls3: ls3,
-        ls4: ls4,
-        utilization: utilization
-      });
-    }
-    
-    return data;
-  };
 
   return (
     <div className="space-y-6">
@@ -574,76 +567,261 @@ export default function CraneDetail() {
         </div>
       </div>
 
-      {/* Historical Data Table */}
+      {/* Detailed Telemetry History Table */}
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Historical Data (Last 7 Days)</h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Daily limit switch triggers and utilization data</p>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Detailed Telemetry History</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                All telemetry events with TEST, UTIL, OL, and Limit Switch status
+              </p>
+            </div>
+            
+            {/* Date Range Filter */}
+            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">From:</label>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => {
+                    setDateFrom(e.target.value);
+                    setCurrentPage(1); // Reset to page 1 on filter change
+                  }}
+                  max={dateTo}
+                  className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">To:</label>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => {
+                    setDateTo(e.target.value);
+                    setCurrentPage(1); // Reset to page 1 on filter change
+                  }}
+                  min={dateFrom}
+                  max={new Date().toISOString().split('T')[0]}
+                  className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <button
+                onClick={() => {
+                  refetchHistory();
+                  toast.success('History refreshed!');
+                }}
+                className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+              >
+                Refresh
+              </button>
+            </div>
+          </div>
+          
+          {/* Stats Row */}
+          {telemetryHistory?.data && (
+            <div className="mt-4 flex flex-wrap gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600 dark:text-gray-400">Total Records:</span>
+                <span className="font-bold text-gray-900 dark:text-white">{telemetryHistory.data.total}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600 dark:text-gray-400">Page:</span>
+                <span className="font-bold text-gray-900 dark:text-white">
+                  {telemetryHistory.data.page} / {telemetryHistory.data.totalPages}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600 dark:text-gray-400">Showing:</span>
+                <span className="font-bold text-gray-900 dark:text-white">
+                  {telemetryHistory.data.history?.length || 0} records
+                </span>
+              </div>
+            </div>
+          )}
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 dark:bg-gray-700">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS1</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS2</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS3</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS4</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Utilization</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              {generateHistoricalData().map((row, index) => (
-                <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                    {row.date}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      row.ls1 > 0 
-                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' 
-                        : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                    }`}>
-                      {row.ls1}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      row.ls2 > 0 
-                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' 
-                        : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                    }`}>
-                      {row.ls2}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      row.ls3 > 0 
-                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' 
-                        : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                    }`}>
-                      {row.ls3}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      row.ls4 > 0 
-                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' 
-                        : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                    }`}>
-                      {row.ls4}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900 dark:text-white">
-                    <div className="flex items-center justify-center space-x-1">
-                      <span className="font-medium">{Math.floor(row.utilization / 60)}h {row.utilization % 60}m</span>
-                    </div>
-                  </td>
+        
+        {/* Loading State */}
+        {historyLoading && (
+          <div className="p-12 flex justify-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          </div>
+        )}
+        
+        {/* Table */}
+        {!historyLoading && telemetryHistory?.data?.history && telemetryHistory.data.history.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 dark:bg-gray-700">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date & Time</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">TEST</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">UTIL</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">OL</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Load (t)</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS1<br/><span className="text-xs normal-case">(Status & Hits)</span></th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS2<br/><span className="text-xs normal-case">(Status & Hits)</span></th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS3<br/><span className="text-xs normal-case">(Status & Hits)</span></th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS4<br/><span className="text-xs normal-case">(Status & Hits)</span></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {telemetryHistory.data.history.map((record, index) => (
+                  <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200">
+                    {/* Date & Time */}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="text-xs">
+                        <div className="font-medium text-gray-900 dark:text-white">{record.date}</div>
+                        <div className="text-gray-500 dark:text-gray-400">{record.time}</div>
+                      </div>
+                    </td>
+                    
+                    {/* TEST bit - Daily test status */}
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold ${
+                        record.testMode 
+                          ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+                          : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                      }`}>
+                        {record.testDone}
+                      </span>
+                    </td>
+                    
+                    {/* UTIL bit - Crane operation */}
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold ${
+                        record.utilBit === 1 
+                          ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+                          : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                      }`}>
+                        {record.utilization}
+                      </span>
+                    </td>
+                    
+                    {/* OL bit - Overload status */}
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold ${
+                        record.overloadBit === 1 
+                          ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 animate-pulse' 
+                          : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                      }`}>
+                        {record.overload}
+                      </span>
+                    </td>
+                    
+                    {/* Load (DRM device only sends LOAD, not SWL) */}
+                    <td className="px-4 py-3 text-center">
+                      <span className="text-sm font-bold text-gray-900 dark:text-white">
+                        {record.load}t
+                      </span>
+                    </td>
+                    
+                    {/* LS1 - Status & Hit Count */}
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          record.ls1 === 'HIT' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                          record.ls1 === 'OK' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                          record.ls1 === 'FAIL' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                          'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                        }`}>
+                          {record.ls1}
+                        </span>
+                        <span className="text-xs text-gray-600 dark:text-gray-400 font-mono">
+                          Hits: {record.ls1HitCount || 0}
+                        </span>
+                      </div>
+                    </td>
+                    
+                    {/* LS2 - Status & Hit Count */}
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          record.ls2 === 'HIT' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                          record.ls2 === 'OK' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                          record.ls2 === 'FAIL' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                          'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                        }`}>
+                          {record.ls2}
+                        </span>
+                        <span className="text-xs text-gray-600 dark:text-gray-400 font-mono">
+                          Hits: {record.ls2HitCount || 0}
+                        </span>
+                      </div>
+                    </td>
+                    
+                    {/* LS3 - Status & Hit Count */}
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          record.ls3 === 'HIT' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                          record.ls3 === 'OK' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                          record.ls3 === 'FAIL' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                          'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                        }`}>
+                          {record.ls3}
+                        </span>
+                        <span className="text-xs text-gray-600 dark:text-gray-400 font-mono">
+                          Hits: {record.ls3HitCount || 0}
+                        </span>
+                      </div>
+                    </td>
+                    
+                    {/* LS4 - Status & Hit Count */}
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          record.ls4 === 'HIT' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                          record.ls4 === 'OK' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                          record.ls4 === 'FAIL' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                          'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                        }`}>
+                          {record.ls4}
+                        </span>
+                        <span className="text-xs text-gray-600 dark:text-gray-400 font-mono">
+                          Hits: {record.ls4HitCount || 0}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        
+        {/* Empty State */}
+        {!historyLoading && (!telemetryHistory?.data?.history || telemetryHistory.data.history.length === 0) && (
+          <div className="p-12 text-center text-gray-500 dark:text-gray-400">
+            <ChartBarIcon className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+            <p className="text-lg font-medium">No telemetry data found</p>
+            <p className="text-sm mt-2">Try adjusting the date range or wait for crane to send data</p>
+          </div>
+        )}
+        
+        {/* Pagination */}
+        {telemetryHistory?.data && telemetryHistory.data.totalPages > 1 && (
+          <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-gray-700 dark:text-gray-300">
+              Page {currentPage} of {telemetryHistory.data.totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(telemetryHistory.data.totalPages, prev + 1))}
+              disabled={currentPage === telemetryHistory.data.totalPages}
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Recent Tickets */}

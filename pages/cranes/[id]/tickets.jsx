@@ -109,6 +109,13 @@ export default function CraneTickets() {
               <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
                 {crane?.location || 'Crane Management System'}
               </p>
+              {/* Info banner */}
+              <div className="mt-3 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <p className="text-sm text-blue-800 dark:text-blue-300">
+                  <span className="font-semibold">ℹ️ Note:</span> Only MQTT TICKET commands (from crane operator) create new tickets. 
+                  Orange-bordered tickets are old automatic alerts (now disabled).
+                </p>
+              </div>
             </div>
             <div className="flex items-center space-x-4">
               <div className="text-right">
@@ -167,11 +174,35 @@ export default function CraneTickets() {
                     const isResolved = ticket.status === 'resolved' || ticket.status === 'closed';
                     const isOpen = ticket.status === 'open' || ticket.status === 'in_progress';
                     
+                    // Check if this is an automatic ticket (before we disabled the feature)
+                    const isAutomaticTicket = ticket.title?.includes('overload condition detected') || 
+                                             ticket.title?.includes('Limit switch') && ticket.title?.includes('failure detected') ||
+                                             ticket.description?.includes('overload condition detected');
+                    
                     return (
                       <div 
                         key={ticket._id || ticket.ticketId} 
-                        className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border-l-4 border-red-500 p-6 hover:shadow-xl transition-shadow"
+                        className={`bg-white dark:bg-gray-800 rounded-lg shadow-lg border-l-4 ${
+                          isAutomaticTicket 
+                            ? 'border-orange-500' 
+                            : 'border-red-500'
+                        } p-6 hover:shadow-xl transition-shadow`}
                       >
+                        {/* Warning badge for automatic tickets */}
+                        {isAutomaticTicket && (
+                          <div className="mb-3 px-3 py-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg flex items-center gap-2">
+                            <span className="text-orange-600 dark:text-orange-400 font-semibold text-sm">
+                              ⚠️ Old Automatic Ticket (Created before auto-tickets were disabled)
+                            </span>
+                            <button
+                              onClick={() => handleResolveTicket(ticket)}
+                              className="ml-auto text-xs px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded font-semibold"
+                            >
+                              Resolve & Clear
+                            </button>
+                          </div>
+                        )}
+                        
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                             <div className="flex items-center space-x-3 mb-3">

@@ -87,7 +87,20 @@ export default function Tickets() {
   };
 
   const getTypeIcon = (type) => {
+    // Map to the 15 crane problems from DRM_3400 TICKET command (Table 7)
     switch (type) {
+      // DRM TICKET Types (from Table 7)
+      case 'mechanical':
+        return '⚙️'; // Trolley, Hook, Jib, Gearbox, Bearing, Motor problems
+      case 'electrical':
+        return '⚡'; // Electric problems, 2-Phase supply
+      case 'safety':
+        return '🚨'; // Limit switch, inclination, brake problems
+      case 'operational':
+        return '🔧'; // Joystick, sensor, rope problems
+      case 'maintenance':
+        return '🛠️'; // Motor overheat, general maintenance
+      // Legacy types (still supported)
       case 'overload':
         return '⚠️';
       case 'limit_switch':
@@ -166,11 +179,18 @@ export default function Tickets() {
                 onChange={(e) => setFilters({ ...filters, type: e.target.value })}
               >
                 <option value="all">All Types</option>
-                <option value="overload">Overload</option>
-                <option value="limit_switch">Limit Switch</option>
-                <option value="offline">Offline</option>
-                <option value="utilization">Utilization</option>
-                <option value="manual">Manual</option>
+                {/* DRM TICKET Types (from Table 7) */}
+                <option value="mechanical">⚙️ Mechanical</option>
+                <option value="electrical">⚡ Electrical</option>
+                <option value="safety">🚨 Safety</option>
+                <option value="operational">🔧 Operational</option>
+                <option value="maintenance">🛠️ Maintenance</option>
+                {/* Legacy types */}
+                <option value="overload">⚠️ Overload</option>
+                <option value="limit_switch">🔧 Limit Switch</option>
+                <option value="offline">📴 Offline</option>
+                <option value="utilization">📊 Utilization</option>
+                <option value="manual">✋ Manual</option>
               </select>
             </div>
           </div>
@@ -196,9 +216,40 @@ export default function Tickets() {
                       {getStatusBadge(ticket.status)}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-300 mb-2 group-hover:text-gray-700 dark:group-hover:text-gray-200 transition-colors duration-300">
-                      <span className="font-medium">Crane:</span> {ticket.craneId} • 
-                      <span className="font-medium ml-1">Type:</span> {(ticket.type || '').replace('_', ' ')} • 
-                      <span className="font-medium ml-1">Created:</span> {new Date(ticket.createdAt).toLocaleString()}
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <div className="flex items-center gap-1">
+                          <span className="font-medium">🏗️ Crane:</span>
+                          <span className="font-semibold text-blue-600 dark:text-blue-400">{ticket.craneId}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="font-medium">📋 Type:</span>
+                          <span className="capitalize">{(ticket.type || '').replace('_', ' ')}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="font-medium">🕐 Created:</span>
+                          <span className="font-semibold text-gray-900 dark:text-white">
+                            {new Date(ticket.createdAt).toLocaleDateString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric', 
+                              year: 'numeric' 
+                            })}
+                            {' at '}
+                            {new Date(ticket.createdAt).toLocaleTimeString('en-US', { 
+                              hour: '2-digit', 
+                              minute: '2-digit',
+                              second: '2-digit'
+                            })}
+                          </span>
+                        </div>
+                        {ticket.ticketId && (
+                          <div className="flex items-center gap-1">
+                            <span className="font-medium">🎫 ID:</span>
+                            <span className="font-mono text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">
+                              {ticket.ticketId}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     {ticket.description && (
                       <div className="text-sm text-gray-600 dark:text-gray-300 mb-2 bg-gray-50 dark:bg-gray-700 p-2 rounded-md">
