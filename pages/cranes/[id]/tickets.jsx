@@ -2,8 +2,6 @@ import { useRouter } from 'next/router';
 import { useQuery } from 'react-query';
 import { ticketsAPI } from '../../../src/lib/api';
 import { cranesAPI } from '../../../src/lib/api';
-import { useState } from 'react';
-import toast from 'react-hot-toast';
 import { 
   ArrowLeftIcon,
   CheckCircleIcon,
@@ -17,7 +15,6 @@ import Link from 'next/link';
 export default function CraneTickets() {
   const router = useRouter();
   const { id } = router.query;
-  const [resolvingTicket, setResolvingTicket] = useState(null);
 
   // Fetch crane details
   const { data: craneData } = useQuery(
@@ -29,7 +26,7 @@ export default function CraneTickets() {
   );
 
   // Fetch tickets for this crane
-  const { data: ticketsResponse, isLoading, refetch } = useQuery(
+  const { data: ticketsResponse, isLoading } = useQuery(
     ['crane-tickets', id],
     () => ticketsAPI.getAll({ craneId: id, status: 'all' }),
     {
@@ -40,29 +37,6 @@ export default function CraneTickets() {
 
   const tickets = ticketsResponse?.data?.data?.tickets || ticketsResponse?.data?.tickets || [];
   const crane = craneData?.data || craneData;
-
-  const handleResolveTicket = async (ticket) => {
-    if (!confirm(`Are you sure you want to resolve ticket "${ticket.title}"?`)) {
-      return;
-    }
-
-    setResolvingTicket(ticket._id);
-    try {
-      const resolution = `Resolved on ${new Date().toLocaleString()}`;
-      await ticketsAPI.update(ticket._id, {
-        status: 'resolved',
-        resolution: resolution
-      });
-      
-      toast.success('Ticket resolved successfully');
-      refetch(); // Refresh tickets list
-    } catch (error) {
-      console.error('Resolve ticket error:', error);
-      toast.error('Failed to resolve ticket');
-    } finally {
-      setResolvingTicket(null);
-    }
-  };
 
   const getStatusBadge = (status) => {
     const badges = {
@@ -171,9 +145,6 @@ export default function CraneTickets() {
                 </h2>
                 <div className="space-y-4">
                   {openTickets.map((ticket) => {
-                    const isResolved = ticket.status === 'resolved' || ticket.status === 'closed';
-                    const isOpen = ticket.status === 'open' || ticket.status === 'in_progress';
-                    
                     // Check if this is an automatic ticket (before we disabled the feature)
                     const isAutomaticTicket = ticket.title?.includes('overload condition detected') || 
                                              ticket.title?.includes('Limit switch') && ticket.title?.includes('failure detected') ||
@@ -190,16 +161,10 @@ export default function CraneTickets() {
                       >
                         {/* Warning badge for automatic tickets */}
                         {isAutomaticTicket && (
-                          <div className="mb-3 px-3 py-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg flex items-center gap-2">
+                          <div className="mb-3 px-3 py-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
                             <span className="text-orange-600 dark:text-orange-400 font-semibold text-sm">
                               ⚠️ Old Automatic Ticket (Created before auto-tickets were disabled)
                             </span>
-                            <button
-                              onClick={() => handleResolveTicket(ticket)}
-                              className="ml-auto text-xs px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded font-semibold"
-                            >
-                              Resolve & Clear
-                            </button>
                           </div>
                         )}
                         
@@ -248,16 +213,6 @@ export default function CraneTickets() {
                               </div>
                             </div>
                           </div>
-                          
-                          {isOpen && (
-                            <button
-                              onClick={() => handleResolveTicket(ticket)}
-                              disabled={resolvingTicket === ticket._id}
-                              className="ml-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-md font-semibold transition-colors duration-200 whitespace-nowrap"
-                            >
-                              {resolvingTicket === ticket._id ? 'Resolving...' : 'Resolve'}
-                            </button>
-                          )}
                         </div>
                       </div>
                     );

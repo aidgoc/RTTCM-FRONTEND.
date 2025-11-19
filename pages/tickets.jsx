@@ -1,16 +1,15 @@
 import { useState } from 'react';
-import { useQuery, useQueryClient } from 'react-query';
-import { ticketsAPI } from '../src/lib/api';
+import { useQuery } from 'react-query';
+import { ticketsAPI, cranesAPI } from '../src/lib/api';
 import { useAuth } from '../src/lib/auth';
-import toast from 'react-hot-toast';
 
 export default function Tickets() {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
   const [filters, setFilters] = useState({
     status: 'all',
     severity: 'all',
     type: 'all',
+    craneId: '', // New crane ID filter
   });
 
   const { data, isLoading } = useQuery(
@@ -22,41 +21,32 @@ export default function Tickets() {
     }
   );
 
-  const handleResolve = async (ticket) => {
-    try {
-      const resolution = `Resolved by ${user.name || user.email} on ${new Date().toLocaleString()}`;
-      await ticketsAPI.update(ticket._id, {
-        status: 'resolved',
-        resolution: resolution
-      });
-      
-      toast.success('Ticket resolved successfully');
-      // Invalidate and refetch tickets
-      queryClient.invalidateQueries(['tickets']);
-      // Also refetch cranes to update ticket status on cards
-      queryClient.invalidateQueries(['cranes']);
-    } catch (error) {
-      console.error('Resolve ticket error:', error);
-      toast.error('Failed to resolve ticket');
+  // Fetch available cranes for the dropdown
+  const { data: cranesData } = useQuery(
+    'cranes',
+    () => cranesAPI.getAll(),
+    {
+      refetchInterval: 5000,
     }
-  };
+  );
 
-  const allTickets = data?.data?.tickets || [];
+  const availableCranes = cranesData?.data?.cranes || [];
 
-  // Filter tickets based on user role and assignments
-  const tickets = allTickets.filter(ticket => {
-    if (user.role === 'admin') {
-      // Admin can see all tickets
-      return true;
-    } else if (user.role === 'manager') {
-      // Manager can only see tickets for cranes assigned to them
-      return user.assignedCranes && user.assignedCranes.includes(ticket.craneId);
-    } else if (user.role === 'operator') {
-      // Operator can only see tickets for cranes assigned to them
-      return user.assignedCranes && user.assignedCranes.includes(ticket.craneId);
-    }
-    return false;
-  });
+  const allTickets = data?.data?.data?.tickets || [];
+
+  // Backend already handles role-based filtering and craneId
+  // No need for additional frontend filtering
+  const tickets = allTickets;
+
+  // Debug logging
+  console.log('🎫 Filters applied:', filters);
+  console.log('🎫 Tickets received from API:', allTickets.length);
+  console.log('🎫 First 3 tickets:', allTickets.slice(0, 3).map(t => ({
+    id: t.ticketId || t._id,
+    craneId: t.craneId,
+    title: t.title,
+    status: t.status
+  })));
 
   const getSeverityBadge = (severity) => {
     switch (severity) {
@@ -130,20 +120,53 @@ export default function Tickets() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Tickets</h1>
-          <p className="text-gray-600 dark:text-gray-300">Monitor and manage system alerts</p>
+          <p className="text-gray-600 dark:text-gray-300">Monitor and manage MQTT-generated tickets</p>
         </div>
-        
-        {user.role !== 'operator' && (
-          <button className="btn-primary">
-            Create Ticket
-          </button>
-        )}
       </div>
 
       {/* Filters */}
       <div className="card hover:shadow-lg hover:border-cyan-400/60 dark:hover:border-cyan-500/60 transition-all duration-300">
         <div className="card-body">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            Filter Tickets
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Crane ID Filter - FIRST */}
+            <div>
+              <label className="form-label font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+                Crane ID
+              </label>
+              <select
+                className="form-input border-2 border-blue-300 dark:border-blue-600 focus:border-blue-500 dark:focus:border-blue-400"
+                value={filters.craneId}
+                onChange={(e) => setFilters({ ...filters, craneId: e.target.value })}
+              >
+                <option value="">🏗️ All Cranes</option>
+                {availableCranes.map((crane) => (
+                  <option key={crane.craneId} value={crane.craneId}>
+                    {crane.craneId} {crane.name ? `- ${crane.name}` : ''}
+                  </option>
+                ))}
+              </select>
+              {filters.craneId && (
+                <button
+                  onClick={() => setFilters({ ...filters, craneId: '' })}
+                  className="mt-2 text-xs text-red-600 dark:text-red-400 hover:underline flex items-center gap-1"
+                >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Clear Filter
+                </button>
+              )}
+            </div>
+
             <div>
               <label className="form-label">Status</label>
               <select
@@ -194,6 +217,57 @@ export default function Tickets() {
               </select>
             </div>
           </div>
+
+          {/* Active Filters Summary */}
+          <div className="mt-4 flex items-center gap-2 flex-wrap">
+            <span className="text-sm text-gray-600 dark:text-gray-400">Active Filters:</span>
+            {filters.craneId && (
+              <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-sm rounded-full font-semibold">
+                🏗️ Crane: {filters.craneId}
+                <button
+                  onClick={() => setFilters({ ...filters, craneId: '' })}
+                  className="hover:bg-blue-200 dark:hover:bg-blue-800 rounded-full p-0.5"
+                >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </span>
+            )}
+            {filters.status !== 'all' && (
+              <span className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm rounded-full">
+                Status: {filters.status}
+              </span>
+            )}
+            {filters.severity !== 'all' && (
+              <span className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm rounded-full">
+                Severity: {filters.severity}
+              </span>
+            )}
+            {filters.type !== 'all' && (
+              <span className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm rounded-full">
+                Type: {filters.type}
+              </span>
+            )}
+            {(filters.craneId || filters.status !== 'all' || filters.severity !== 'all' || filters.type !== 'all') && (
+              <button
+                onClick={() => setFilters({ status: 'all', severity: 'all', type: 'all', craneId: '' })}
+                className="text-xs text-red-600 dark:text-red-400 hover:underline font-semibold"
+              >
+                Clear All Filters
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Tickets Count */}
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-gray-600 dark:text-gray-400">
+          Showing <span className="font-bold text-gray-900 dark:text-white">{tickets.length}</span> ticket{tickets.length !== 1 ? 's' : ''}
+          {filters.craneId && (
+            <span> for crane <span className="font-bold text-blue-600 dark:text-blue-400">{filters.craneId}</span></span>
+          )}
         </div>
       </div>
 
@@ -262,36 +336,6 @@ export default function Tickets() {
                       </div>
                     )}
                   </div>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <button className="btn-outline text-xs px-3 py-1 group-hover:scale-105 transition-transform duration-300">
-                    View
-                  </button>
-                  {user.role !== 'operator' && (
-                    <>
-                      {ticket.status === 'open' && (
-                        <button className="btn-primary text-xs px-3 py-1 group-hover:scale-105 transition-transform duration-300">
-                          Assign
-                        </button>
-                      )}
-                      {(ticket.status === 'open' || ticket.status === 'in_progress') && (
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleResolve(ticket);
-                          }}
-                          className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1 rounded-md group-hover:scale-105 transition-all duration-300 font-semibold"
-                        >
-                          Resolve
-                        </button>
-                      )}
-                      {ticket.status === 'in_progress' && (
-                        <button className="btn-success text-xs px-3 py-1 group-hover:scale-105 transition-transform duration-300">
-                          Close
-                        </button>
-                      )}
-                    </>
-                  )}
                 </div>
               </div>
             </div>
