@@ -66,6 +66,7 @@ export const cranesAPI = {
   getTelemetry: (id, params = {}) => api.get(`/api/cranes/${id}/telemetry`, { params }),
   getTelemetryStats: (id, params = {}) => api.get(`/api/cranes/${id}/telemetry/stats`, { params }),
   getTelemetryHistory: (id, params = {}) => api.get(`/api/cranes/${id}/telemetry/history`, { params }),
+  getDailySummary: (id, params = {}) => api.get(`/api/cranes/${id}/telemetry/daily-summary`, { params }),
   getTickets: (id, params = {}) => api.get(`/api/cranes/${id}/tickets`, { params }),
   getTestHistory: (id, params = {}) => api.get(`/api/cranes/${id}/test-history`, { params }),
   syncTelemetry: () => api.post('/api/cranes/sync-telemetry'),

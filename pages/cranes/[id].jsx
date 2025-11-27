@@ -31,8 +31,6 @@ export default function CraneDetail() {
     // Default: today
     return new Date().toISOString().split('T')[0];
   });
-  const [currentPage, setCurrentPage] = useState(1);
-  const historyLimit = 100;
 
   const { data, isLoading, refetch } = useQuery(
     ['crane', id],
@@ -50,18 +48,21 @@ export default function CraneDetail() {
     }
   );
 
-  // Fetch telemetry history with date range
-  const { data: telemetryHistory, isLoading: historyLoading, refetch: refetchHistory } = useQuery(
-    ['crane-telemetry-history', id, dateFrom, dateTo, currentPage],
-    () => cranesAPI.getTelemetryHistory(id, { 
-      from: new Date(dateFrom).toISOString(), 
-      to: new Date(dateTo + 'T23:59:59').toISOString(), 
-      page: currentPage, 
-      limit: historyLimit 
-    }),
+  // Fetch daily summary
+  const { data: dailySummary, isLoading: summaryLoading, refetch: refetchSummary } = useQuery(
+    ['crane-daily-summary', id, dateFrom, dateTo],
+    async () => {
+      const result = await cranesAPI.getDailySummary(id, { 
+        from: new Date(dateFrom).toISOString(), 
+        to: new Date(dateTo + 'T23:59:59').toISOString()
+      });
+      console.log('📅 Daily Summary Data:', result.data);
+      console.log('📅 Dates received:', result.data?.summaries?.map(s => s.date).join(', '));
+      console.log('📅 Total days:', result.data?.summaries?.length);
+      return result;
+    },
     {
       enabled: !!id && !!dateFrom && !!dateTo,
-      keepPreviousData: true, // Keep previous data while loading new page
     }
   );
 
@@ -69,18 +70,33 @@ export default function CraneDetail() {
   const crane = data?.data;
   const telemetry = telemetryData?.data;
 
+  // Live MQTT data feed - keep last 20 messages
+  const [liveMQTTMessages, setLiveMQTTMessages] = useState([]);
+  const [lastMQTTUpdate, setLastMQTTUpdate] = useState(null);
+  
   // WebSocket subscription for real-time updates
   useEffect(() => {
     if (!connected || !id || !subscribeToTelemetry) return;
 
-    const unsubscribe = subscribeToTelemetry(id, (data) => {
-      setRealTimeData(data);
+    const unsubscribe = subscribeToTelemetry(id, (mqttData) => {
+      setRealTimeData(mqttData);
+      const now = new Date();
+      setLastMQTTUpdate(now);
+      
+      // Add to live messages feed (keep last 20)
+      setLiveMQTTMessages(prev => [{
+        ...mqttData,
+        receivedAt: now,
+        id: Date.now()
+      }, ...prev].slice(0, 20));
+      
       refetch(); // Refresh crane data
-      toast.success(`Real-time update for ${id}`);
+      refetchSummary(); // Refresh daily summary
+      // toast.success(`Live data received for ${id}`); // Removed to avoid spam
     });
 
     return unsubscribe;
-  }, [connected, id, refetch, subscribeToTelemetry]);
+  }, [connected, id, refetch, refetchSummary, subscribeToTelemetry]);
 
   // Check for overload condition and show alert
   useEffect(() => {
@@ -567,15 +583,191 @@ export default function CraneDetail() {
         </div>
       </div>
 
-      {/* Detailed Telemetry History Table */}
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      {/* LIVE MQTT DATA FEED */}
+      <div className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 border-2 border-green-500 dark:border-green-600 rounded-xl shadow-lg">
+        <div className="px-6 py-4 border-b-2 border-green-500 dark:border-green-600 bg-green-100 dark:bg-green-900/30">
+          <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Detailed Telemetry History</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                All telemetry events with TEST, UTIL, OL, and Limit Switch status
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <div className="w-4 h-4 bg-green-500 rounded-full animate-pulse"></div>
+                  <div className="absolute top-0 left-0 w-4 h-4 bg-green-500 rounded-full animate-ping"></div>
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">🔴 LIVE MQTT DATA FEED</h3>
+              </div>
+              <p className="text-sm text-gray-700 dark:text-gray-300 mt-1 ml-7">
+                Real-time data received from MQTT broker (last 20 messages)
               </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {connected ? (
+                <span className="flex items-center gap-2 px-3 py-1 bg-green-500 text-white text-sm font-medium rounded-full">
+                  <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                  CONNECTED
+                </span>
+              ) : (
+                <span className="flex items-center gap-2 px-3 py-1 bg-red-500 text-white text-sm font-medium rounded-full">
+                  <div className="w-2 h-2 bg-white rounded-full"></div>
+                  DISCONNECTED
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        {/* Live Messages */}
+        <div className="p-6">
+          {liveMQTTMessages.length === 0 ? (
+            <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+              <WifiIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
+              <p className="text-lg font-medium">Waiting for MQTT messages...</p>
+              <p className="text-sm mt-2">Live data will appear here when received from the device</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[600px] overflow-y-auto">
+              {liveMQTTMessages.map((msg, index) => (
+                <div key={msg.id} className={`border-l-4 ${
+                  msg.data?.overload ? 'border-red-500 bg-red-50 dark:bg-red-900/20' :
+                  msg.data?.util === 1 ? 'border-green-500 bg-green-50 dark:bg-green-900/20' :
+                  'border-gray-300 bg-gray-50 dark:bg-gray-800'
+                } rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow`}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      {/* Header */}
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className={`px-2 py-1 text-xs font-bold rounded ${
+                          index === 0 ? 'bg-green-500 text-white animate-pulse' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                        }`}>
+                          {index === 0 ? '🆕 LATEST' : `#${index + 1}`}
+                        </span>
+                        <span className="text-xs font-mono text-gray-500 dark:text-gray-400">
+                          {new Date(msg.receivedAt).toLocaleTimeString('en-US', { 
+                            hour: '2-digit', 
+                            minute: '2-digit', 
+                            second: '2-digit',
+                            fractionalSecondDigits: 3
+                          })}
+                        </span>
+                      </div>
+                      
+                      {/* Data Grid */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mt-3">
+                        {/* Status */}
+                        <div className="flex flex-col">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">STATUS</span>
+                          <span className={`text-sm font-bold ${
+                            msg.data?.util === 1 ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'
+                          }`}>
+                            {msg.data?.util === 1 ? '🟢 WORKING' : '⚫ IDLE'}
+                          </span>
+                        </div>
+                        
+                        {/* Load */}
+                        <div className="flex flex-col">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">LOAD</span>
+                          <span className="text-sm font-bold text-gray-900 dark:text-white">
+                            {msg.data?.load || 0}t
+                          </span>
+                        </div>
+                        
+                        {/* Overload */}
+                        <div className="flex flex-col">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">OVERLOAD</span>
+                          <span className={`text-sm font-bold ${
+                            msg.data?.overload ? 'text-red-600 dark:text-red-400 animate-pulse' : 'text-green-600 dark:text-green-400'
+                          }`}>
+                            {msg.data?.overload ? '🚨 YES' : '✅ NO'}
+                          </span>
+                        </div>
+                        
+                        {/* Test */}
+                        <div className="flex flex-col">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">TEST</span>
+                          <span className={`text-sm font-bold ${
+                            msg.data?.testMode ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'
+                          }`}>
+                            {msg.data?.testMode ? '✅ DONE' : '❌ NO'}
+                          </span>
+                        </div>
+                        
+                        {/* LS1 */}
+                        <div className="flex flex-col">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">LS1</span>
+                          <span className={`text-sm font-bold ${
+                            msg.data?.ls1 === 'HIT' ? 'text-yellow-600 dark:text-yellow-400' :
+                            msg.data?.ls1 === 'OK' ? 'text-green-600 dark:text-green-400' :
+                            'text-gray-600 dark:text-gray-400'
+                          }`}>
+                            {msg.data?.ls1 || 'N/A'}
+                          </span>
+                        </div>
+                        
+                        {/* LS2 */}
+                        <div className="flex flex-col">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">LS2</span>
+                          <span className={`text-sm font-bold ${
+                            msg.data?.ls2 === 'HIT' ? 'text-yellow-600 dark:text-yellow-400' :
+                            msg.data?.ls2 === 'OK' ? 'text-green-600 dark:text-green-400' :
+                            'text-gray-600 dark:text-gray-400'
+                          }`}>
+                            {msg.data?.ls2 || 'N/A'}
+                          </span>
+                        </div>
+                        
+                        {/* LS3 */}
+                        <div className="flex flex-col">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">LS3</span>
+                          <span className={`text-sm font-bold ${
+                            msg.data?.ls3 === 'HIT' ? 'text-yellow-600 dark:text-yellow-400' :
+                            msg.data?.ls3 === 'OK' ? 'text-green-600 dark:text-green-400' :
+                            'text-gray-600 dark:text-gray-400'
+                          }`}>
+                            {msg.data?.ls3 || 'N/A'}
+                          </span>
+                        </div>
+                        
+                        {/* LS4 */}
+                        <div className="flex flex-col">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">LS4</span>
+                          <span className={`text-sm font-bold ${
+                            msg.data?.ls4 === 'HIT' ? 'text-yellow-600 dark:text-yellow-400' :
+                            msg.data?.ls4 === 'OK' ? 'text-green-600 dark:text-green-400' :
+                            'text-gray-600 dark:text-gray-400'
+                          }`}>
+                            {msg.data?.ls4 || 'N/A'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* DAILY SUMMARY TABLE */}
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg mt-6">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">📅 Daily Summary</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                Total hits and statistics per day
+              </p>
+              {lastMQTTUpdate && (
+                <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-medium">
+                  🔴 Last MQTT Update: {lastMQTTUpdate.toLocaleString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    year: 'numeric',
+                    hour: '2-digit', 
+                    minute: '2-digit', 
+                    second: '2-digit' 
+                  })}
+                </p>
+              )}
             </div>
             
             {/* Date Range Filter */}
@@ -585,10 +777,7 @@ export default function CraneDetail() {
                 <input
                   type="date"
                   value={dateFrom}
-                  onChange={(e) => {
-                    setDateFrom(e.target.value);
-                    setCurrentPage(1); // Reset to page 1 on filter change
-                  }}
+                  onChange={(e) => setDateFrom(e.target.value)}
                   max={dateTo}
                   className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                 />
@@ -598,228 +787,119 @@ export default function CraneDetail() {
                 <input
                   type="date"
                   value={dateTo}
-                  onChange={(e) => {
-                    setDateTo(e.target.value);
-                    setCurrentPage(1); // Reset to page 1 on filter change
-                  }}
+                  onChange={(e) => setDateTo(e.target.value)}
                   min={dateFrom}
                   max={new Date().toISOString().split('T')[0]}
                   className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <button
-                onClick={() => {
-                  refetchHistory();
-                  toast.success('History refreshed!');
-                }}
+                onClick={() => refetchSummary()}
                 className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
               >
                 Refresh
               </button>
             </div>
           </div>
-          
-          {/* Stats Row */}
-          {telemetryHistory?.data && (
-            <div className="mt-4 flex flex-wrap gap-4 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="text-gray-600 dark:text-gray-400">Total Records:</span>
-                <span className="font-bold text-gray-900 dark:text-white">{telemetryHistory.data.total}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-gray-600 dark:text-gray-400">Page:</span>
-                <span className="font-bold text-gray-900 dark:text-white">
-                  {telemetryHistory.data.page} / {telemetryHistory.data.totalPages}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-gray-600 dark:text-gray-400">Showing:</span>
-                <span className="font-bold text-gray-900 dark:text-white">
-                  {telemetryHistory.data.history?.length || 0} records
-                </span>
-              </div>
-            </div>
-          )}
         </div>
-        
+
         {/* Loading State */}
-        {historyLoading && (
-          <div className="p-12 flex justify-center">
+        {summaryLoading && (
+          <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
           </div>
         )}
-        
-        {/* Table */}
-        {!historyLoading && telemetryHistory?.data?.history && telemetryHistory.data.history.length > 0 && (
+
+        {/* Empty State */}
+        {!summaryLoading && (!dailySummary?.data?.summaries || dailySummary.data.summaries.length === 0) && (
+          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+            <ChartBarIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
+            <p className="text-lg font-medium">No data found for this date range</p>
+            <p className="text-sm mt-2">Try adjusting the date range or check if telemetry data exists</p>
+          </div>
+        )}
+
+        {/* Summary Table */}
+        {!summaryLoading && dailySummary?.data?.summaries && dailySummary.data.summaries.length > 0 && (
           <div className="overflow-x-auto">
+            <div className="px-4 py-2 bg-gray-50 dark:bg-gray-900 text-xs text-gray-600 dark:text-gray-400">
+              Showing {dailySummary.data.summaries.length} day(s) of data
+            </div>
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date & Time</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">TEST</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">UTIL</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">OL</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Load (t)</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS1<br/><span className="text-xs normal-case">(Status & Hits)</span></th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS2<br/><span className="text-xs normal-case">(Status & Hits)</span></th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS3<br/><span className="text-xs normal-case">(Status & Hits)</span></th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS4<br/><span className="text-xs normal-case">(Status & Hits)</span></th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS1 Hits</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS2 Hits</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS3 Hits</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">LS4 Hits</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Utilization</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Overload</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Test</th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {telemetryHistory.data.history.map((record, index) => (
+                {dailySummary.data.summaries.map((summary, index) => (
                   <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200">
-                    {/* Date & Time */}
+                    {/* Date */}
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="text-xs">
-                        <div className="font-medium text-gray-900 dark:text-white">{record.date}</div>
-                        <div className="text-gray-500 dark:text-gray-400">{record.time}</div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-white">
+                        {summary.date}
                       </div>
                     </td>
                     
-                    {/* TEST bit - Daily test status */}
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold ${
-                        record.testMode 
-                          ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
-                          : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                      }`}>
-                        {record.testDone}
-                      </span>
-                    </td>
-                    
-                    {/* UTIL bit - Crane operation */}
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold ${
-                        record.utilBit === 1 
-                          ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
-                          : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                      }`}>
-                        {record.utilization}
-                      </span>
-                    </td>
-                    
-                    {/* OL bit - Overload status */}
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold ${
-                        record.overloadBit === 1 
-                          ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 animate-pulse' 
-                          : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                      }`}>
-                        {record.overload}
-                      </span>
-                    </td>
-                    
-                    {/* Load (DRM device only sends LOAD, not SWL) */}
+                    {/* LS1 Hits */}
                     <td className="px-4 py-3 text-center">
                       <span className="text-sm font-bold text-gray-900 dark:text-white">
-                        {record.load}t
+                        {summary.ls1Hits}
                       </span>
                     </td>
                     
-                    {/* LS1 - Status & Hit Count */}
+                    {/* LS2 Hits */}
                     <td className="px-4 py-3 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          record.ls1 === 'HIT' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                          record.ls1 === 'OK' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                          record.ls1 === 'FAIL' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                          'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                        }`}>
-                          {record.ls1}
-                        </span>
-                        <span className="text-xs text-gray-600 dark:text-gray-400 font-mono">
-                          Hits: {record.ls1HitCount || 0}
-                        </span>
-                      </div>
+                      <span className="text-sm font-bold text-gray-900 dark:text-white">
+                        {summary.ls2Hits}
+                      </span>
                     </td>
                     
-                    {/* LS2 - Status & Hit Count */}
+                    {/* LS3 Hits */}
                     <td className="px-4 py-3 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          record.ls2 === 'HIT' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                          record.ls2 === 'OK' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                          record.ls2 === 'FAIL' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                          'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                        }`}>
-                          {record.ls2}
-                        </span>
-                        <span className="text-xs text-gray-600 dark:text-gray-400 font-mono">
-                          Hits: {record.ls2HitCount || 0}
-                        </span>
-                      </div>
+                      <span className="text-sm font-bold text-gray-900 dark:text-white">
+                        {summary.ls3Hits}
+                      </span>
                     </td>
                     
-                    {/* LS3 - Status & Hit Count */}
+                    {/* LS4 Hits */}
                     <td className="px-4 py-3 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          record.ls3 === 'HIT' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                          record.ls3 === 'OK' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                          record.ls3 === 'FAIL' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                          'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                        }`}>
-                          {record.ls3}
-                        </span>
-                        <span className="text-xs text-gray-600 dark:text-gray-400 font-mono">
-                          Hits: {record.ls3HitCount || 0}
-                        </span>
-                      </div>
+                      <span className="text-sm font-bold text-gray-900 dark:text-white">
+                        {summary.ls4Hits}
+                      </span>
                     </td>
                     
-                    {/* LS4 - Status & Hit Count */}
+                    {/* Utilization */}
                     <td className="px-4 py-3 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          record.ls4 === 'HIT' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                          record.ls4 === 'OK' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                          record.ls4 === 'FAIL' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                          'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                        }`}>
-                          {record.ls4}
-                        </span>
-                        <span className="text-xs text-gray-600 dark:text-gray-400 font-mono">
-                          Hits: {record.ls4HitCount || 0}
-                        </span>
-                      </div>
+                      <span className="text-sm font-bold text-gray-900 dark:text-white">
+                        {summary.utilizationPercentage}%
+                      </span>
+                    </td>
+                    
+                    {/* Overload Count */}
+                    <td className="px-4 py-3 text-center">
+                      <span className={`text-sm font-bold ${summary.overloadCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+                        {summary.overloadCount}
+                      </span>
+                    </td>
+                    
+                    {/* Test */}
+                    <td className="px-4 py-3 text-center">
+                      <span className={`text-sm font-bold ${summary.testCompleted ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                        {summary.testCompleted ? '✅' : '❌'}
+                      </span>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-        
-        {/* Empty State */}
-        {!historyLoading && (!telemetryHistory?.data?.history || telemetryHistory.data.history.length === 0) && (
-          <div className="p-12 text-center text-gray-500 dark:text-gray-400">
-            <ChartBarIcon className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-            <p className="text-lg font-medium">No telemetry data found</p>
-            <p className="text-sm mt-2">Try adjusting the date range or wait for crane to send data</p>
-          </div>
-        )}
-        
-        {/* Pagination */}
-        {telemetryHistory?.data && telemetryHistory.data.totalPages > 1 && (
-          <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
-            <button
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              disabled={currentPage === 1}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              Previous
-            </button>
-            <span className="text-sm text-gray-700 dark:text-gray-300">
-              Page {currentPage} of {telemetryHistory.data.totalPages}
-            </span>
-            <button
-              onClick={() => setCurrentPage(prev => Math.min(telemetryHistory.data.totalPages, prev + 1))}
-              disabled={currentPage === telemetryHistory.data.totalPages}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              Next
-            </button>
           </div>
         )}
       </div>
